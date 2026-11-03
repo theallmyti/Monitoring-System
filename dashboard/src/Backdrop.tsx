@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 // Original 3D backdrop, written for this dashboard (not taken from any other site).
-// A wireframe portal ring with a cyan and magenta rim, a faceted core, and a drifting
-// particle field. Fewer particles on small screens; off for reduced motion. The UI stays monochrome.
+// A faceted wireframe core and a drifting particle field.
+// Fewer particles on small screens; off for reduced motion. The UI stays monochrome.
 
 const PARTICLES = 1400;
 const COLOURS = [0x3ee0ff, 0x7dff9b, 0xffd166];
@@ -31,21 +31,13 @@ export function Backdrop() {
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     camera.position.set(0, 0, 9);
 
-    // Portal: two rims and a faceted core.
+    // Faceted core.
     const portal = new THREE.Group();
-    const rim = new THREE.Mesh(
-      new THREE.TorusGeometry(2.6, 0.02, 8, 180),
-      new THREE.MeshBasicMaterial({ color: 0x3ee0ff, transparent: true, opacity: 0.9 }),
-    );
-    const rimMagenta = new THREE.Mesh(
-      new THREE.TorusGeometry(2.8, 0.014, 8, 180),
-      new THREE.MeshBasicMaterial({ color: 0xff3ec8, transparent: true, opacity: 0.7 }),
-    );
     const core = new THREE.Mesh(
       new THREE.IcosahedronGeometry(0.9, 0),
       new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.55 }),
     );
-    portal.add(rim, rimMagenta, core);
+    portal.add(core);
     scene.add(portal);
 
     // Particles: spawn in a ring around the portal and drift downward.
@@ -92,16 +84,12 @@ export function Backdrop() {
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
 
-    // Portrait screens: pull the camera back so the portal ring fits the width.
-    let baseZ = 9;
     const resize = () => {
       renderer.setSize(window.innerWidth, window.innerHeight, false);
       camera.aspect = window.innerWidth / window.innerHeight;
-      baseZ = Math.max(9, 3.1 / (Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect));
       camera.updateProjectionMatrix();
     };
     resize();
-    camera.position.z = baseZ;
     window.addEventListener("resize", resize);
 
     let frame = 0;
@@ -112,8 +100,6 @@ export function Backdrop() {
       portal.rotation.z += dt * (0.08 + progress * 0.25);
       core.rotation.x += dt * 0.2;
       core.rotation.y += dt * 0.3;
-      rim.rotation.x = Math.sin(now / 2400) * 0.12;
-      rimMagenta.rotation.y = Math.cos(now / 2900) * 0.1;
 
       const pos = geometry.attributes.position as THREE.BufferAttribute;
       for (let i = 0; i < count; i++) {
@@ -123,8 +109,8 @@ export function Backdrop() {
       }
       pos.needsUpdate = true;
 
-      // Scrolling moves the camera in toward the portal.
-      const targetZ = baseZ - progress * 3;
+      // Scrolling moves the camera in toward the core.
+      const targetZ = 9 - progress * 3;
       camera.position.z += (targetZ - camera.position.z) * 0.05;
       camera.position.x += (mx * 0.5 - camera.position.x) * 0.04;
       camera.position.y += (-my * 0.4 - camera.position.y) * 0.04;
