@@ -17,28 +17,51 @@ export default function App() {
   });
 
   if (!token) {
-    return <TokenScreen onSave={(t) => {
-      try { localStorage.setItem(TOKEN_KEY, t); } catch { /* private window: keep in memory */ }
-      setToken(t);
-    }} />;
+    return (
+      <TokenScreen
+        onSave={(t) => {
+          try {
+            localStorage.setItem(TOKEN_KEY, t);
+          } catch {
+            /* private window: keep the token in memory only */
+          }
+          setToken(t);
+        }}
+      />
+    );
   }
-  return <Dashboard token={token} onSignOut={() => {
-    try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
-    setToken(null);
-  }} />;
+  return (
+    <Dashboard
+      token={token}
+      onSignOut={() => {
+        try {
+          localStorage.removeItem(TOKEN_KEY);
+        } catch {
+          /* ignore */
+        }
+        setToken(null);
+      }}
+    />
+  );
 }
 
 function TokenScreen({ onSave }: { onSave: (t: string) => void }) {
   const [value, setValue] = useState("");
   return (
     <main className="center">
-      <form className="card login" onSubmit={(e) => { e.preventDefault(); if (value.trim()) onSave(value.trim()); }}>
+      <form
+        className="login"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (value.trim()) onSave(value.trim());
+        }}
+      >
         <h1>PC Monitor</h1>
         <label>
           Dashboard read token
           <input type="password" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} />
         </label>
-        <button type="submit">Open</button>
+        <button type="submit" className="action">Open dashboard</button>
       </form>
     </main>
   );
@@ -47,22 +70,39 @@ function TokenScreen({ onSave }: { onSave: (t: string) => void }) {
 function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void }) {
   const data = useQuery(anyApi.dashboard.overview, { token }) as Overview | undefined;
 
-  if (data === undefined) return <main className="center"><p className="muted">Loading…</p></main>;
+  if (data === undefined) {
+    return (
+      <main className="center">
+        <p className="empty">Loading readings…</p>
+      </main>
+    );
+  }
+
+  const online = data.devices.filter((d: Device) => d.online).length;
 
   return (
     <main className="page">
       <header>
-        <h1>PC Monitor</h1>
-        <button className="link" onClick={onSignOut}>Sign out</button>
+        <button type="button" className="link" onClick={onSignOut}>Sign out</button>
       </header>
-      {data.devices.length === 0 ? (
-        <p className="muted">No devices yet. Start an agent to see it here.</p>
-      ) : (
-        <section className="grid">
+
+      <div className="masthead">
+        <h1>PC Monitor</h1>
+        <p className="italic">Every machine you own, at a glance.</p>
+      </div>
+      <hr className="rule" />
+      <p className="lede">
+        {data.devices.length === 0
+          ? "No devices have reported yet."
+          : `${online} of ${data.devices.length} ${data.devices.length === 1 ? "device" : "devices"} online. Readings update as each agent reports.`}
+      </p>
+
+      {data.devices.length > 0 && (
+        <div className="entries">
           {data.devices.map((d: Device) => (
             <DeviceCard key={d.id} device={d} />
           ))}
-        </section>
+        </div>
       )}
     </main>
   );
