@@ -81,6 +81,15 @@ export function Backdrop() {
     };
     window.addEventListener("pointermove", onMove);
 
+    // Scroll: 0 at the top of the page, 1 at the bottom. Drives the camera and motion speed.
+    let progress = 0;
+    const onScroll = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      progress = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+
     const resize = () => {
       renderer.setSize(window.innerWidth, window.innerHeight, false);
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -94,7 +103,7 @@ export function Backdrop() {
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      portal.rotation.z += dt * 0.08;
+      portal.rotation.z += dt * (0.08 + progress * 0.25);
       core.rotation.x += dt * 0.2;
       core.rotation.y += dt * 0.3;
       rim.rotation.x = Math.sin(now / 2400) * 0.12;
@@ -102,12 +111,15 @@ export function Backdrop() {
 
       const pos = geometry.attributes.position as THREE.BufferAttribute;
       for (let i = 0; i < PARTICLES; i++) {
-        let y = pos.getY(i) - speeds[i] * dt;
+        let y = pos.getY(i) - speeds[i] * dt * (1 + progress * 2);
         if (y < -6) y += 12;
         pos.setY(i, y);
       }
       pos.needsUpdate = true;
 
+      // Scrolling moves the camera in toward the portal.
+      const targetZ = 9 - progress * 3;
+      camera.position.z += (targetZ - camera.position.z) * 0.05;
       camera.position.x += (mx * 0.5 - camera.position.x) * 0.04;
       camera.position.y += (-my * 0.4 - camera.position.y) * 0.04;
       camera.lookAt(0, 0, 0);
@@ -131,6 +143,7 @@ export function Backdrop() {
       cancelAnimationFrame(frame);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", resize);
       geometry.dispose();
       renderer.dispose();
