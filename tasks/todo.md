@@ -90,11 +90,12 @@ Common verification commands:
 ## Phase 4: Agent completeness
 
 ### Task 12: Disk collector and capabilities
-- [ ] Drive list with size/free (FR-26); `agent.register` reports capabilities (battery, GPU, per-core temps, mode, drives, Pi) (FR-15)
+- [x] Drive list with size/free (FR-26); `agent.register` reports capabilities (battery, GPU, per-core temps, mode, drives, Pi) (FR-15)
+- [x] Also done here: per-core CPU use and clocks (FR-20), RAM/swap detail and top 5 processes (FR-23), uptime (FR-24)
 - **Size:** M
 
 ### Task 13: RAM details, usage time, battery
-- [ ] RAM used/free/cached/swap + top 5 processes (FR-23); uptime and active time (FR-24); battery on laptops (FR-25)
+- [ ] Battery on laptops (FR-25); active time today and boot/sleep log (FR-24). RAM detail and uptime were done in Task 12.
 - **Size:** M
 
 ### Task 14: Supervisor

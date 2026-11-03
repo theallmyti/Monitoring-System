@@ -4,6 +4,7 @@
 //! reconnects by itself with backoff, so only the first connection is retried here).
 
 mod aggregator;
+mod collectors;
 mod config;
 mod dashboard;
 mod gpu;
@@ -16,14 +17,19 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aggregator::{Aggregator, Sample, Summary};
+use collectors::{Drive, Proc};
 use convex::{ConvexClient, FunctionResult, Value};
 use futures::StreamExt;
-use sysinfo::{Components, CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+use sysinfo::{Components, CpuRefreshKind, Disks, MemoryRefreshKind, RefreshKind, System};
 
 /// FR-30: one summary per minute, always.
 const SUMMARY_EVERY: Duration = Duration::from_secs(60);
 /// A push that takes longer than this is dropped so sampling keeps going.
 const PUSH_TIMEOUT: Duration = Duration::from_secs(5);
+/// Live view refresh intervals for the slower readings, in seconds (ticks).
+const PROCESS_EVERY: u64 = 5;
+const DRIVES_EVERY: u64 = 10;
+const DOCKER_EVERY: u64 = 10;
 
 /// Hottest CPU sensor in Celsius. Raspberry Pi: cpu_thermal. Linux x86: coretemp/k10temp.
 fn cpu_temp(components: &Components) -> Option<f64> {
@@ -61,6 +67,23 @@ fn num(v: f64) -> Value {
     Value::Float64(v)
 }
 
+fn text(s: &str) -> Value {
+    Value::String(s.to_string())
+}
+
+fn obj<const N: usize>(fields: [(&str, Value); N]) -> Value {
+    Value::Object(
+        fields
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+    )
+}
+
+fn numbers(values: &[f64]) -> Value {
+    Value::Array(values.iter().map(|v| num(*v)).collect())
+}
+
 /// Convex `gpu` object (docs/Database.md `latest.gpu`). Optional fields are left out when absent.
 fn gpu_value(g: &gpu::GpuStats) -> Value {
     let mut o = BTreeMap::new();
@@ -76,13 +99,87 @@ fn gpu_value(g: &gpu::GpuStats) -> Value {
     Value::Object(o)
 }
 
-/// Arguments for `agent:pushSummary`. Optional readings are left out when absent.
-fn summary_args(secret_hash: &str, minute_ts: u64, s: &Summary) -> BTreeMap<String, Value> {
-    let mut a = BTreeMap::new();
-    a.insert(
-        "secretHash".to_string(),
-        Value::String(secret_hash.to_string()),
+fn drives_live(drives: &[Drive]) -> Value {
+    Value::Array(
+        drives
+            .iter()
+            .map(|d| {
+                obj([
+                    ("name", text(&d.name)),
+                    ("totalGB", num(d.total_gb)),
+                    ("freeGB", num(d.free_gb)),
+                ])
+            })
+            .collect(),
+    )
+}
+
+fn drives_summary(drives: &[Drive]) -> Value {
+    Value::Array(
+        drives
+            .iter()
+            .map(|d| {
+                let pct = if d.total_gb > 0.0 {
+                    d.free_gb / d.total_gb * 100.0
+                } else {
+                    0.0
+                };
+                obj([
+                    ("name", text(&d.name)),
+                    ("freeGB", num(d.free_gb)),
+                    ("freePct", num(pct)),
+                ])
+            })
+            .collect(),
+    )
+}
+
+fn procs_value(procs: &[Proc]) -> Value {
+    Value::Array(
+        procs
+            .iter()
+            .map(|p| obj([("name", text(&p.name)), ("mb", num(p.mb))]))
+            .collect(),
+    )
+}
+
+/// FR-15: what this device can report (docs/Database.md §2).
+fn capabilities_value(has_gpu: bool, components: &Components, drives: &[Drive]) -> Value {
+    let mut o = BTreeMap::new();
+    o.insert("hasBattery".to_string(), Value::Boolean(false)); // Task 13 adds the battery reader
+    o.insert("hasNvidiaGpu".to_string(), Value::Boolean(has_gpu));
+    o.insert(
+        "perCoreTemps".to_string(),
+        Value::Boolean(collectors::has_per_core_temps(components)),
     );
+    if cfg!(windows) {
+        o.insert("windowsMode".to_string(), text("noDriver"));
+    }
+    o.insert(
+        "isPi".to_string(),
+        Value::Boolean(collectors::is_raspberry_pi()),
+    );
+    o.insert(
+        "drives".to_string(),
+        Value::Array(
+            drives
+                .iter()
+                .map(|d| obj([("name", text(&d.name)), ("totalGB", num(d.total_gb))]))
+                .collect(),
+        ),
+    );
+    Value::Object(o)
+}
+
+/// Arguments for `agent:pushSummary`. Optional readings are left out when absent.
+fn summary_args(
+    secret_hash: &str,
+    minute_ts: u64,
+    s: &Summary,
+    drives: &[Drive],
+) -> BTreeMap<String, Value> {
+    let mut a = BTreeMap::new();
+    a.insert("secretHash".to_string(), text(secret_hash));
     a.insert("minuteTs".to_string(), num(minute_ts as f64));
     a.insert("cpuUtilAvg".to_string(), num(s.cpu_util_avg));
     a.insert("cpuUtilMax".to_string(), num(s.cpu_util_max));
@@ -98,6 +195,9 @@ fn summary_args(secret_hash: &str, minute_ts: u64, s: &Summary) -> BTreeMap<Stri
         if let Some(v) = value {
             a.insert(key.to_string(), num(v));
         }
+    }
+    if !drives.is_empty() {
+        a.insert("disks".to_string(), drives_summary(drives));
     }
     a
 }
@@ -151,7 +251,7 @@ fn watch_viewer(mut client: ConvexClient, secret_hash: String, viewer_until: Arc
     tokio::spawn(async move {
         loop {
             let mut args = BTreeMap::new();
-            args.insert("secretHash".to_string(), Value::String(secret_hash.clone()));
+            args.insert("secretHash".to_string(), text(&secret_hash));
             match client.subscribe("agent:watchViewer", args).await {
                 Ok(mut sub) => {
                     while let Some(result) = sub.next().await {
@@ -198,8 +298,26 @@ async fn main() {
     };
     let secret_hash = config::secret_hash(&secret);
 
+    // Readers first, so registration can report capabilities.
+    let mut sys = System::new_with_specifics(
+        RefreshKind::nothing()
+            .with_cpu(CpuRefreshKind::everything())
+            .with_memory(MemoryRefreshKind::everything()),
+    )
+    .expect("failed to read system info");
+    // No NVIDIA driver means no GPU stats; the rest of the agent keeps running (NFR-07).
+    let nvml = gpu::init().ok();
+    let mut components = Components::new_with_refreshed_list().expect("failed to read sensors");
+    let mut disks = Disks::new_with_refreshed_list().ok();
+    let mut drives = disks.as_ref().map(collectors::drives).unwrap_or_default();
+
     let device_name = System::host_name().unwrap_or_else(|_| "unknown".to_string());
-    println!("device={device_name} convex={}", config.convex_url);
+    println!(
+        "device={device_name} convex={} gpu={} drives={}",
+        config.convex_url,
+        if nvml.is_some() { "nvidia" } else { "none" },
+        drives.len()
+    );
     let mut client = connect(&config.convex_url).await;
 
     // Register (or refresh) this device. Pairing replaces this in Task 7.
@@ -210,12 +328,14 @@ async fn main() {
         exit(1);
     };
     let mut reg_args = BTreeMap::new();
+    reg_args.insert("registrationSecret".to_string(), text(&registration_secret));
+    reg_args.insert("secretHash".to_string(), text(&secret_hash));
+    reg_args.insert("name".to_string(), text(&device_name));
     reg_args.insert(
-        "registrationSecret".to_string(),
-        Value::String(registration_secret),
+        "capabilities".to_string(),
+        capabilities_value(nvml.is_some(), &components, &drives),
     );
-    reg_args.insert("secretHash".to_string(), Value::String(secret_hash.clone()));
-    reg_args.insert("name".to_string(), Value::String(device_name.clone()));
+    reg_args.insert("agentVersion".to_string(), text(env!("CARGO_PKG_VERSION")));
     if !push(&mut client, "agent:register", reg_args).await {
         exit(1);
     }
@@ -224,18 +344,9 @@ async fn main() {
     let viewer_until = Arc::new(AtomicU64::new(0));
     watch_viewer(client.clone(), secret_hash.clone(), viewer_until.clone());
 
-    let mut sys = System::new_with_specifics(
-        RefreshKind::nothing()
-            .with_cpu(CpuRefreshKind::everything())
-            .with_memory(MemoryRefreshKind::everything()),
-    )
-    .expect("failed to read system info");
-    // No NVIDIA driver means no GPU stats; the rest of the agent keeps running (NFR-07).
-    let nvml = gpu::init().ok();
-    let mut components = Components::new_with_refreshed_list().expect("failed to read sensors");
     // Container counts are fetched every 10 s (they change slowly).
     let mut docker: Option<dashboard::DockerSummary> = None;
-    println!("gpu={}", if nvml.is_some() { "nvidia" } else { "none" });
+    let mut top: Vec<Proc> = Vec::new();
 
     // CPU usage needs two samples separated by a short delay.
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -253,7 +364,11 @@ async fn main() {
         sys.refresh_cpu_usage();
         sys.refresh_memory();
         components.refresh(false);
-        if let Some(url) = config.dashboard_url.as_deref().filter(|_| tick % 10 == 1) {
+        if let Some(url) = config
+            .dashboard_url
+            .as_deref()
+            .filter(|_| tick % DOCKER_EVERY == 1)
+        {
             match dashboard::docker_summary(url) {
                 Ok(d) => docker = Some(d),
                 Err(e) => eprintln!("dashboard read failed: {e}"),
@@ -280,6 +395,7 @@ async fn main() {
         });
 
         let now = now_ms();
+        let summary_due = Instant::now() >= next_summary;
 
         // Live: only while a viewer is present (FR-31).
         let live = viewer_until.load(Ordering::Relaxed) > now;
@@ -294,37 +410,79 @@ async fn main() {
             );
             was_live = live;
         }
+
+        // Drives: every 10 s while live, and before each summary.
+        if ((live && tick % DRIVES_EVERY == 1) || summary_due)
+            && let Some(d) = disks.as_mut()
+        {
+            d.refresh(true);
+            drives = collectors::drives(d);
+        }
+
         if live {
+            // Processes only while someone is watching, every 5 s (keeps idle CPU low).
+            if top.is_empty() || tick % PROCESS_EVERY == 1 {
+                collectors::refresh_processes(&mut sys);
+                top = collectors::top_processes(&sys, 5);
+            }
+            let (per_core, clocks) = collectors::per_core(&sys);
+            let ram = collectors::ram_detail(&sys);
+
             let mut args = BTreeMap::new();
-            args.insert("secretHash".to_string(), Value::String(secret_hash.clone()));
+            args.insert("secretHash".to_string(), text(&secret_hash));
             args.insert("ts".to_string(), num(now as f64));
             args.insert("cpuUtil".to_string(), num(cpu_util));
             args.insert("ramUsedPct".to_string(), num(ram_pct));
+            args.insert("perCoreUtil".to_string(), numbers(&per_core));
+            args.insert("clocks".to_string(), numbers(&clocks));
+            args.insert(
+                "ram".to_string(),
+                obj([
+                    ("used", num(ram.used)),
+                    ("free", num(ram.free)),
+                    ("total", num(ram.total)),
+                    ("swapUsed", num(ram.swap_used)),
+                    ("swapTotal", num(ram.swap_total)),
+                ]),
+            );
+            args.insert("topProcs".to_string(), procs_value(&top));
+            if !drives.is_empty() {
+                args.insert("disks".to_string(), drives_live(&drives));
+            }
+            if let Some(up) = collectors::uptime_secs() {
+                args.insert("uptimeSec".to_string(), num(up as f64));
+            }
             if let Some(t) = cpu_t {
                 args.insert("cpuTemp".to_string(), num(t));
             }
             if let Some(d) = docker {
-                let mut o = BTreeMap::new();
-                o.insert("running".to_string(), num(f64::from(d.running)));
-                o.insert("stopped".to_string(), num(f64::from(d.stopped)));
-                o.insert("errored".to_string(), num(f64::from(d.error)));
-                args.insert("docker".to_string(), Value::Object(o));
+                args.insert(
+                    "docker".to_string(),
+                    obj([
+                        ("running", num(f64::from(d.running))),
+                        ("stopped", num(f64::from(d.stopped))),
+                        ("errored", num(f64::from(d.error))),
+                    ]),
+                );
             }
             if let Some(g) = &gpu {
                 args.insert("gpu".to_string(), gpu_value(g));
             }
             push(&mut client, "agent:pushLatest", args).await;
+        } else if !top.is_empty() {
+            // Free the process list when nobody is watching.
+            top.clear();
         }
 
         // Summary: every 60 s, always (FR-30).
-        if Instant::now() >= next_summary {
+        if summary_due {
             next_summary += SUMMARY_EVERY;
             if let Some(s) = aggregator.take() {
                 let minute_ts = now / 60_000 * 60_000;
                 if push(
                     &mut client,
                     "agent:pushSummary",
-                    summary_args(&secret_hash, minute_ts, &s),
+                    summary_args(&secret_hash, minute_ts, &s, &drives),
                 )
                 .await
                 {

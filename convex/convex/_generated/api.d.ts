@@ -12,6 +12,7 @@ import type * as agent from "../agent.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as summaries from "../summaries.js";
+import type * as validators from "../validators.js";
 
 import type {
   ApiFromModules,
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   dashboard: typeof dashboard;
   summaries: typeof summaries;
+  validators: typeof validators;
 }>;
 
 /**

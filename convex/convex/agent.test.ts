@@ -90,3 +90,68 @@ test("pushLatest updates the latest row and writes no history", async () => {
   expect(latest[0].cpu.util).toBe(12);
   expect(await t.run((ctx) => ctx.db.query("summaries").collect())).toHaveLength(0);
 });
+
+test("register stores capabilities and agent version", async () => {
+  const t = convexTest(schema, modules);
+  const caps = {
+    hasBattery: true,
+    hasNvidiaGpu: true,
+    perCoreTemps: false,
+    windowsMode: "noDriver" as const,
+    isPi: false,
+    drives: [{ name: "C:", totalGB: 476 }],
+  };
+  const id = await t.mutation(api.agent.register, {
+    registrationSecret: "team-secret",
+    secretHash: HASH,
+    name: "test-pc",
+    capabilities: caps,
+    agentVersion: "0.1.0",
+  });
+  const device = await t.run((ctx) => ctx.db.get(id));
+  expect(device?.capabilities).toEqual(caps);
+  expect(device?.agentVersion).toBe("0.1.0");
+});
+
+test("pushLatest stores per-core use, RAM detail, top processes, drives and uptime", async () => {
+  const { t } = await setup();
+  await t.mutation(api.agent.pushLatest, {
+    secretHash: HASH,
+    ts: Date.now(),
+    cpuUtil: 20,
+    ramUsedPct: 50,
+    perCoreUtil: [10, 30],
+    clocks: [3200, 3100],
+    ram: { used: 8, free: 8, total: 16, swapUsed: 1, swapTotal: 4 },
+    topProcs: [{ name: "chrome.exe", mb: 1500 }],
+    disks: [{ name: "C:", totalGB: 476, freeGB: 120 }],
+    uptimeSec: 3600,
+  });
+  const [row] = await t.run((ctx) => ctx.db.query("latest").collect());
+  expect(row.cpu.perCoreUtil).toEqual([10, 30]);
+  expect(row.ram.detail?.total).toBe(16);
+  expect(row.ram.topProcs?.[0].name).toBe("chrome.exe");
+  expect(row.disks?.[0].freeGB).toBe(120);
+  expect(row.uptimeSec).toBe(3600);
+});
+
+test("impossible drive values are rejected", async () => {
+  const { t } = await setup();
+  await expect(
+    t.mutation(api.agent.pushLatest, {
+      secretHash: HASH,
+      ts: Date.now(),
+      cpuUtil: 20,
+      ramUsedPct: 50,
+      disks: [{ name: "C:", totalGB: 100, freeGB: 200 }],
+    }),
+  ).rejects.toThrow(/disk value out of range/);
+  await expect(
+    t.mutation(api.agent.pushSummary, {
+      secretHash: HASH,
+      minuteTs: 1,
+      ...SUMMARY,
+      disks: [{ name: "C:", freeGB: 10, freePct: 140 }],
+    }),
+  ).rejects.toThrow(/disk value out of range/);
+});

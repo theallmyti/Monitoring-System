@@ -3,6 +3,7 @@
 // isFake: true marks test rows; they are deleted before week 3.
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
 
 export default defineSchema({
   devices: defineTable({
@@ -14,13 +15,27 @@ export default defineSchema({
     viewerUntil: v.optional(v.number()),
     // Server time of the last accepted summary, for the 50 s limit (docs/Security.md §2).
     lastSummaryAt: v.optional(v.number()),
+    // Reported by the agent at registration (FR-15).
+    capabilities: v.optional(capabilities),
+    agentVersion: v.optional(v.string()),
   }).index("by_secretHash", ["secretHash"]),
 
   latest: defineTable({
     deviceId: v.id("devices"),
     ts: v.number(),
-    cpu: v.object({ util: v.number(), packageTemp: v.optional(v.number()) }),
-    ram: v.object({ usedPct: v.number() }),
+    cpu: v.object({
+      util: v.number(),
+      packageTemp: v.optional(v.number()),
+      perCoreUtil: v.optional(v.array(v.number())), // % per logical core
+      clocks: v.optional(v.array(v.number())), // MHz per logical core
+    }),
+    ram: v.object({
+      usedPct: v.number(),
+      detail: v.optional(ramDetail),
+      topProcs: v.optional(v.array(topProc)),
+    }),
+    disks: v.optional(v.array(driveLive)),
+    uptimeSec: v.optional(v.number()),
     // Optional: only NVIDIA machines send it. Units: MB, W, MHz, %.
     gpu: v.optional(
       v.object({
@@ -42,7 +57,7 @@ export default defineSchema({
   }).index("by_device", ["deviceId"]),
 
   // One row per device per minute: averages and peaks of the agent's 1 s samples
-  // (docs/Database.md summaries). Disks, battery and collector status are added in Phase 4.
+  // (docs/Database.md summaries). Battery and collector status are added in Tasks 13–14.
   summaries: defineTable({
     deviceId: v.id("devices"),
     minuteTs: v.number(),
@@ -54,6 +69,7 @@ export default defineSchema({
     cpuTempMax: v.optional(v.number()),
     gpuTempMax: v.optional(v.number()),
     gpuUtilAvg: v.optional(v.number()),
+    disks: v.optional(v.array(driveSummary)),
   })
     .index("by_device_time", ["deviceId", "minuteTs"])
     // For the daily retention job across all devices (FR-50).

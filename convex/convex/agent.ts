@@ -7,6 +7,7 @@
 // No public read endpoint: the app reads through pairing in week 2.
 import { mutation, query, QueryCtx } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
+import { capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
 
 // docs/Security.md §2: at most one summary per 50 s per device.
 const SUMMARY_MIN_GAP_MS = 50_000;
@@ -23,6 +24,8 @@ export const register = mutation({
     registrationSecret: v.string(),
     secretHash: v.string(),
     name: v.string(),
+    capabilities: v.optional(capabilities),
+    agentVersion: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const expected = process.env.AGENT_REGISTRATION_SECRET;
@@ -30,13 +33,14 @@ export const register = mutation({
       throw new ConvexError("not authorized");
     }
     const now = Date.now();
+    const report = { name: args.name, capabilities: args.capabilities, agentVersion: args.agentVersion };
     const existing = await deviceBySecretHash(ctx, args.secretHash);
     if (existing) {
-      await ctx.db.patch(existing._id, { name: args.name, lastSeenAt: now });
+      await ctx.db.patch(existing._id, { ...report, lastSeenAt: now });
       return existing._id;
     }
     return await ctx.db.insert("devices", {
-      name: args.name,
+      ...report,
       secretHash: args.secretHash,
       lastSeenAt: now,
       isFake: true,
@@ -52,6 +56,12 @@ export const pushLatest = mutation({
     ramUsedPct: v.number(),
     cpuTemp: v.optional(v.number()),
     docker: v.optional(v.object({ running: v.number(), stopped: v.number(), errored: v.number() })),
+    perCoreUtil: v.optional(v.array(v.number())),
+    clocks: v.optional(v.array(v.number())),
+    ram: v.optional(ramDetail),
+    topProcs: v.optional(v.array(topProc)),
+    disks: v.optional(v.array(driveLive)),
+    uptimeSec: v.optional(v.number()),
     gpu: v.optional(
       v.object({
         temp: v.number(),
@@ -75,6 +85,12 @@ export const pushLatest = mutation({
     if (args.gpu && (args.gpu.temp < 0 || args.gpu.temp > 125 || args.gpu.util < 0 || args.gpu.util > 100)) {
       throw new ConvexError("gpu value out of range");
     }
+    if (args.perCoreUtil?.some((p) => p < 0 || p > 100)) {
+      throw new ConvexError("per-core value out of range");
+    }
+    if (args.disks?.some((d) => d.freeGB < 0 || d.freeGB > d.totalGB)) {
+      throw new ConvexError("disk value out of range");
+    }
     const device = await deviceBySecretHash(ctx, args.secretHash);
     if (!device) {
       throw new ConvexError("unknown device");
@@ -83,8 +99,10 @@ export const pushLatest = mutation({
     const row = {
       deviceId: device._id,
       ts: args.ts,
-      cpu: { util: args.cpuUtil, packageTemp: args.cpuTemp },
-      ram: { usedPct: args.ramUsedPct },
+      cpu: { util: args.cpuUtil, packageTemp: args.cpuTemp, perCoreUtil: args.perCoreUtil, clocks: args.clocks },
+      ram: { usedPct: args.ramUsedPct, detail: args.ram, topProcs: args.topProcs },
+      disks: args.disks,
+      uptimeSec: args.uptimeSec,
       gpu: args.gpu,
       pi: args.docker ? { docker: args.docker } : undefined,
     };
@@ -113,8 +131,12 @@ export const pushSummary = mutation({
     cpuTempMax: v.optional(v.number()),
     gpuTempMax: v.optional(v.number()),
     gpuUtilAvg: v.optional(v.number()),
+    disks: v.optional(v.array(driveSummary)),
   },
   handler: async (ctx, { secretHash, ...summary }) => {
+    if (summary.disks?.some((d) => d.freeGB < 0 || d.freePct < 0 || d.freePct > 100)) {
+      throw new ConvexError("disk value out of range");
+    }
     // FR-28: reject impossible values.
     const percents = [summary.cpuUtilAvg, summary.cpuUtilMax, summary.ramPctAvg, summary.ramPctMax, summary.gpuUtilAvg];
     const temps = [summary.cpuTempAvg, summary.cpuTempMax, summary.gpuTempMax];
