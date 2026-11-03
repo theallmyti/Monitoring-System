@@ -170,3 +170,22 @@ test("pushLatest stores the battery and rejects impossible charge", async () => 
     t.mutation(api.agent.pushLatest, { ...base, battery: { pct: 120, charging: false } }),
   ).rejects.toThrow(/battery value out of range/);
 });
+
+test("unpair removes the device, its live row and all history", async () => {
+  const { t, deviceId } = await setup();
+  await t.mutation(api.agent.pushLatest, { secretHash: HASH, ts: Date.now(), cpuUtil: 10, ramUsedPct: 20 });
+  await t.run(async (ctx) => {
+    for (let i = 0; i < 600; i++) {
+      await ctx.db.insert("summaries", { deviceId, minuteTs: i * 60_000, ...SUMMARY });
+    }
+  });
+
+  expect(await t.mutation(api.agent.unpair, { secretHash: HASH })).toBe(true);
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+  expect(await t.run((ctx) => ctx.db.get(deviceId))).toBeNull();
+  expect(await t.run((ctx) => ctx.db.query("latest").collect())).toHaveLength(0);
+  expect(await t.run((ctx) => ctx.db.query("summaries").collect())).toHaveLength(0);
+  // Running it again (uninstall twice) is harmless.
+  expect(await t.mutation(api.agent.unpair, { secretHash: HASH })).toBe(false);
+});

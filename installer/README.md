@@ -15,14 +15,28 @@ Builds `dist\pc-monitor-agent-setup-<version>.exe`, a normal Windows setup progr
 - Creates the `PCMonitorAgent` Windows service (LocalSystem, delayed auto-start), restarted
   5 s / 5 s / 60 s after a crash, and starts it. Log: `C:\ProgramData\PCMonitor\agent.log`.
 - Upgrade: keeps the config, stops the service, replaces files, starts it again.
-- Uninstall: stops and deletes the service, removes the program and `C:\ProgramData\PCMonitor`.
-  PawnIO stays installed (remove it from Settings → Apps if wanted).
+
+## Install location
+Any local fixed drive works (for example `E:\PC Monitor`). The folder only holds the program;
+config and logs always live in `C:\ProgramData\PCMonitor`. The drive must be present when Windows
+starts (not a USB or network drive), because the service starts at boot. Setup locks the folder
+to SYSTEM and Administrators, since the agent runs as LocalSystem.
+
+## Uninstall
+Three ways, all doing the same: Start menu → PC Monitor → Uninstall PC Monitor Agent,
+Settings → Apps, or `dist\pc-monitor-agent-uninstall.exe` (works for any installed version).
+- Stops and deletes the service.
+- Removes this computer and its history from the PC Monitor dashboard (`pc-monitor-agent unpair`).
+- Removes the PawnIO driver: without asking if this setup installed it, otherwise after asking,
+  because other apps (Fan Control, LibreHardwareMonitor) may use it.
+- Deletes the program folder and `C:\ProgramData\PCMonitor`.
 
 ## Build
 1. `cd agent && cargo build --release`
 2. `powershell -File installer\fetch-pawnio.ps1` (needs `gh`; downloads and checks the PawnIO files)
 3. `"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\pc-monitor-agent.iss`
    (or `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe` for a per-user Inno Setup install)
+4. Same for `installer\pc-monitor-agent-uninstall.iss` → `dist\pc-monitor-agent-uninstall.exe`
 
 ## Known limits
 - Not code-signed (no budget for a certificate), so Windows SmartScreen shows

@@ -302,6 +302,20 @@ fn main() {
             print_sensors();
             return;
         }
+        // Remove this device from PC Monitor (run by the uninstaller).
+        Some("unpair") => {
+            let path = PathBuf::from(
+                std::env::args()
+                    .nth(2)
+                    .unwrap_or_else(|| "config.toml".to_string()),
+            );
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("failed to start the async runtime")
+                .block_on(pair::unpair(&path));
+            return;
+        }
         // Show a QR code and wait for the owner to confirm (run by the installer).
         Some("pair") => {
             let path = PathBuf::from(

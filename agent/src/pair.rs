@@ -143,6 +143,35 @@ pub async fn run(path: &Path) {
     }
 }
 
+/// `pc-monitor-agent unpair [config]`, run by the uninstaller: removes this device and its
+/// history from PC Monitor. Always exits 0 so an offline computer can still be uninstalled.
+pub async fn unpair(path: &Path) {
+    let Ok(config) = crate::config::Config::load(path) else {
+        println!("No config found; nothing to remove online.");
+        return;
+    };
+    let Some(secret) = config.device_secret.as_deref() else {
+        println!("This computer was never paired; nothing to remove online.");
+        return;
+    };
+    let mut args = BTreeMap::new();
+    args.insert(
+        "secretHash".to_string(),
+        text(&crate::config::secret_hash(secret)),
+    );
+    let removed = async {
+        let mut client = convex::ConvexClient::new(&config.convex_url).await.ok()?;
+        client.mutation("agent:unpair", args).await.ok()
+    };
+    match tokio::time::timeout(Duration::from_secs(20), removed).await {
+        Ok(Some(FunctionResult::Value(Value::Boolean(true)))) => {
+            println!("Removed this computer from PC Monitor.")
+        }
+        Ok(Some(FunctionResult::Value(_))) => println!("This computer was already removed."),
+        _ => println!("Could not reach PC Monitor; remove this computer from the dashboard later."),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

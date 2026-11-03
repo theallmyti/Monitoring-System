@@ -11,6 +11,18 @@ const TOKEN_KEY = "pcm-read-token";
 
 export default function App() {
   const [token, setToken] = useState<string | null>(() => {
+    // A link from "Open on phone" carries the token after #. The part after # is never sent to
+    // the server; save it and remove it from the address bar.
+    const fromLink = window.location.hash.match(/token=([0-9a-f]{16,})/i)?.[1];
+    if (fromLink) {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+      try {
+        localStorage.setItem(TOKEN_KEY, fromLink);
+      } catch {
+        /* private window: keep the token in memory only */
+      }
+      return fromLink;
+    }
     try {
       return localStorage.getItem(TOKEN_KEY);
     } catch {

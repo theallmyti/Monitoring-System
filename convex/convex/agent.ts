@@ -6,6 +6,7 @@
 //    Convex compares the hash (docs/Flow.md §3, docs/Security.md §6).
 // No public read endpoint: the app reads through pairing in week 2.
 import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { deviceBySecretHash } from "./model";
 import { v, ConvexError } from "convex/values";
 import { battery, capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
@@ -33,6 +34,33 @@ export const hello = mutation({
       lastSeenAt: Date.now(),
     });
     return device._id;
+  },
+});
+
+// Uninstall: the agent removes its own device, live row, pairing codes and history.
+// Authenticated by the device secret hash; unknown devices are a no-op (already removed).
+export const unpair = mutation({
+  args: { secretHash: v.string() },
+  handler: async (ctx, args) => {
+    const device = await deviceBySecretHash(ctx, args.secretHash);
+    if (!device) {
+      return false;
+    }
+    for (const row of await ctx.db
+      .query("latest")
+      .withIndex("by_device", (q) => q.eq("deviceId", device._id))
+      .collect()) {
+      await ctx.db.delete(row._id);
+    }
+    for (const r of await ctx.db
+      .query("pairingRequests")
+      .withIndex("by_secretHash", (q) => q.eq("secretHash", args.secretHash))
+      .collect()) {
+      await ctx.db.delete(r._id);
+    }
+    await ctx.db.delete(device._id);
+    await ctx.scheduler.runAfter(0, internal.summaries.deleteForDevice, { deviceId: device._id });
+    return true;
   },
 });
 
