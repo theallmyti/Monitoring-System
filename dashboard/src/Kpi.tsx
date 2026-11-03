@@ -1,3 +1,4 @@
+import { onReveal } from "./reveal";
 // KPI tile: label, large number, a thin meter, and a short note.
 export function Kpi({
   label,
@@ -15,7 +16,7 @@ export function Kpi({
   hot?: boolean;
 }) {
   return (
-    <div className={`kpi ${hot ? "kpi-hot" : ""}`}>
+    <div className={`kpi ${hot ? "kpi-hot" : ""}`} onPointerMove={onReveal}>
       <span className="kpi-label">{label}</span>
       <span className="kpi-value">
         {value}

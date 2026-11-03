@@ -91,8 +91,9 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
   const running = withLatest.reduce((n, d) => n + (d.latest?.pi?.docker?.running ?? 0), 0);
 
   return (
-    <main className="page">
+    <>
       <header className="topbar">
+        <div className="topbar-inner">
         <div>
           <h1>PC Monitor</h1>
           <p className="italic">Every machine you own, at a glance.</p>
@@ -113,7 +114,10 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
           </div>
           <button type="button" className="link" onClick={onSignOut}>Sign out</button>
         </div>
+        </div>
       </header>
+
+      <main className="page">
 
       {devices.length === 0 ? (
         <p className="empty">No devices have reported yet.</p>
@@ -160,6 +164,7 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
         </>
       )}
     </main>
+    </>
   );
 }
 
