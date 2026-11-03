@@ -2,13 +2,16 @@
 // Auth:
 //  - register: needs the team registration secret (env var AGENT_REGISTRATION_SECRET).
 //    Only the two of us know it. Replaced by pairing in week 2 (docs/Flow.md §3).
-//  - pushLatest: the agent sends SHA-256(device secret); Convex compares the hash
-//    (docs/Flow.md §3, docs/Security.md §6).
+//  - pushLatest, pushSummary, watchViewer: the agent sends SHA-256(device secret);
+//    Convex compares the hash (docs/Flow.md §3, docs/Security.md §6).
 // No public read endpoint: the app reads through pairing in week 2.
-import { mutation, MutationCtx } from "./_generated/server";
+import { mutation, query, QueryCtx } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 
-async function deviceBySecretHash(ctx: MutationCtx, secretHash: string) {
+// docs/Security.md §2: at most one summary per 50 s per device.
+const SUMMARY_MIN_GAP_MS = 50_000;
+
+async function deviceBySecretHash(ctx: Pick<QueryCtx, "db">, secretHash: string) {
   return await ctx.db
     .query("devices")
     .withIndex("by_secretHash", (q) => q.eq("secretHash", secretHash))
@@ -94,25 +97,54 @@ export const pushLatest = mutation({
     } else {
       await ctx.db.insert("latest", row);
     }
+  },
+});
 
-    // One history sample per minute (Architecture.md §2.2). Spike form: the first push of each minute.
-    const minuteTs = Math.floor(args.ts / 60000) * 60000;
-    const last = await ctx.db
-      .query("summaries")
-      .withIndex("by_device_time", (q) => q.eq("deviceId", device._id))
-      .order("desc")
-      .first();
-    if (!last || last.minuteTs < minuteTs) {
-      await ctx.db.insert("summaries", {
-        deviceId: device._id,
-        minuteTs,
-        cpuUtil: args.cpuUtil,
-        ramPct: args.ramUsedPct,
-        cpuTemp: args.cpuTemp,
-        gpuTemp: args.gpu?.temp,
-        gpuUtil: args.gpu?.util,
-        vramPct: args.gpu ? (args.gpu.vramUsed / args.gpu.vramTotal) * 100 : undefined,
-      });
+// Every 60 s, always: the minute's averages and peaks (docs/Architecture.md §2.2, FR-30).
+export const pushSummary = mutation({
+  args: {
+    secretHash: v.string(),
+    minuteTs: v.number(),
+    cpuUtilAvg: v.number(),
+    cpuUtilMax: v.number(),
+    ramPctAvg: v.number(),
+    ramPctMax: v.number(),
+    cpuTempAvg: v.optional(v.number()),
+    cpuTempMax: v.optional(v.number()),
+    gpuTempMax: v.optional(v.number()),
+    gpuUtilAvg: v.optional(v.number()),
+  },
+  handler: async (ctx, { secretHash, ...summary }) => {
+    // FR-28: reject impossible values.
+    const percents = [summary.cpuUtilAvg, summary.cpuUtilMax, summary.ramPctAvg, summary.ramPctMax, summary.gpuUtilAvg];
+    const temps = [summary.cpuTempAvg, summary.cpuTempMax, summary.gpuTempMax];
+    if (
+      percents.some((p) => p !== undefined && (p < 0 || p > 100)) ||
+      temps.some((t) => t !== undefined && (t < 0 || t > 125))
+    ) {
+      throw new ConvexError("value out of range");
     }
+    const device = await deviceBySecretHash(ctx, secretHash);
+    if (!device) {
+      throw new ConvexError("unknown device");
+    }
+    const now = Date.now();
+    if (device.lastSummaryAt !== undefined && now - device.lastSummaryAt < SUMMARY_MIN_GAP_MS) {
+      throw new ConvexError("summary sent too soon");
+    }
+    await ctx.db.insert("summaries", { deviceId: device._id, ...summary });
+    await ctx.db.patch(device._id, { lastSeenAt: now, lastSummaryAt: now });
+  },
+});
+
+// The agent subscribes to this; live pushes run only while the value is in the future (FR-31).
+export const watchViewer = query({
+  args: { secretHash: v.string() },
+  handler: async (ctx, args) => {
+    const device = await deviceBySecretHash(ctx, args.secretHash);
+    if (!device) {
+      throw new ConvexError("unknown device");
+    }
+    return device.viewerUntil ?? 0;
   },
 });

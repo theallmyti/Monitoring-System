@@ -10,6 +10,10 @@ export default defineSchema({
     secretHash: v.string(), // SHA-256 hex of the device secret (docs/Security.md §6)
     lastSeenAt: v.number(),
     isFake: v.boolean(),
+    // Live data flows only while this is in the future (docs/Flow.md §4, D3).
+    viewerUntil: v.optional(v.number()),
+    // Server time of the last accepted summary, for the 50 s limit (docs/Security.md §2).
+    lastSummaryAt: v.optional(v.number()),
   }).index("by_secretHash", ["secretHash"]),
 
   latest: defineTable({
@@ -37,16 +41,18 @@ export default defineSchema({
     ),
   }).index("by_device", ["deviceId"]),
 
-  // One sample per device per minute, for the history charts (docs/Database.md summaries).
-  // Spike form: a single sample, not avg/max. Week 2 replaces it with the real aggregator.
+  // One row per device per minute: averages and peaks of the agent's 1 s samples
+  // (docs/Database.md summaries). Disks, battery and collector status are added in Phase 4.
   summaries: defineTable({
     deviceId: v.id("devices"),
     minuteTs: v.number(),
-    cpuUtil: v.number(),
-    ramPct: v.number(),
-    cpuTemp: v.optional(v.number()),
-    gpuTemp: v.optional(v.number()),
-    gpuUtil: v.optional(v.number()),
-    vramPct: v.optional(v.number()),
+    cpuUtilAvg: v.number(),
+    cpuUtilMax: v.number(),
+    ramPctAvg: v.number(),
+    ramPctMax: v.number(),
+    cpuTempAvg: v.optional(v.number()),
+    cpuTempMax: v.optional(v.number()),
+    gpuTempMax: v.optional(v.number()),
+    gpuUtilAvg: v.optional(v.number()),
   }).index("by_device_time", ["deviceId", "minuteTs"]),
 });
