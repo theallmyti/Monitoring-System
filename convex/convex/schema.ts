@@ -20,6 +20,19 @@ export default defineSchema({
     agentVersion: v.optional(v.string()),
   }).index("by_secretHash", ["secretHash"]),
 
+  // Open pairing codes (docs/Flow.md §3). Confirmed rows keep the device link for the agent.
+  pairingRequests: defineTable({
+    code: v.string(),
+    secretHash: v.string(),
+    name: v.string(),
+    os: v.string(),
+    status: v.union(v.literal("pending"), v.literal("confirmed")),
+    deviceId: v.optional(v.id("devices")),
+    expiresAt: v.number(),
+  })
+    .index("by_code", ["code"])
+    .index("by_secretHash", ["secretHash"]),
+
   latest: defineTable({
     deviceId: v.id("devices"),
     ts: v.number(),

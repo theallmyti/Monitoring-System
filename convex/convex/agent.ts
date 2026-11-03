@@ -5,20 +5,38 @@
 //  - pushLatest, pushSummary, watchViewer: the agent sends SHA-256(device secret);
 //    Convex compares the hash (docs/Flow.md §3, docs/Security.md §6).
 // No public read endpoint: the app reads through pairing in week 2.
-import { mutation, query, QueryCtx } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
+import { deviceBySecretHash } from "./model";
 import { v, ConvexError } from "convex/values";
 import { battery, capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
 
 // docs/Security.md §2: at most one summary per 50 s per device.
 const SUMMARY_MIN_GAP_MS = 50_000;
 
-async function deviceBySecretHash(ctx: Pick<QueryCtx, "db">, secretHash: string) {
-  return await ctx.db
-    .query("devices")
-    .withIndex("by_secretHash", (q) => q.eq("secretHash", secretHash))
-    .unique();
-}
 
+// Called at every agent start once the device is paired: refreshes what it reports (FR-15).
+// Never creates a device; pairing does that.
+export const hello = mutation({
+  args: {
+    secretHash: v.string(),
+    capabilities: v.optional(capabilities),
+    agentVersion: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const device = await deviceBySecretHash(ctx, args.secretHash);
+    if (!device) {
+      throw new ConvexError("not paired");
+    }
+    await ctx.db.patch(device._id, {
+      capabilities: args.capabilities,
+      agentVersion: args.agentVersion,
+      lastSeenAt: Date.now(),
+    });
+    return device._id;
+  },
+});
+
+// Legacy: registration with the team secret, kept until every agent uses pairing (Task 8).
 export const register = mutation({
   args: {
     registrationSecret: v.string(),

@@ -12,6 +12,7 @@ mod config;
 mod cputemp;
 mod dashboard;
 mod gpu;
+mod pair;
 #[cfg(windows)]
 mod service;
 
@@ -301,6 +302,20 @@ fn main() {
             print_sensors();
             return;
         }
+        // Show a QR code and wait for the owner to confirm (run by the installer).
+        Some("pair") => {
+            let path = PathBuf::from(
+                std::env::args()
+                    .nth(2)
+                    .unwrap_or_else(|| "config.toml".to_string()),
+            );
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("failed to start the async runtime")
+                .block_on(pair::run(&path));
+            return;
+        }
         // Started by the Windows Service Control Manager (installed by the setup program).
         #[cfg(windows)]
         Some("service") => {
@@ -379,16 +394,11 @@ pub async fn run(path: PathBuf, stop: Arc<Notify>) {
     );
     let mut client = connect(&config.convex_url).await;
 
-    // Register (or refresh) this device. Pairing replaces this in Task 7.
-    let Some(registration_secret) = config.registration_secret.clone() else {
-        warn!("registration_secret missing from config.toml (get it from the other team member)");
-        exit(1);
-    };
-    let mut reg_args = BTreeMap::new();
-    reg_args.insert("registrationSecret".to_string(), text(&registration_secret));
-    reg_args.insert("secretHash".to_string(), text(&secret_hash));
-    reg_args.insert("name".to_string(), text(&device_name));
-    reg_args.insert(
+    // Say hello: the device must be paired (docs/Flow.md §3). Until then, retry every minute,
+    // so a service started before pairing picks it up without a restart.
+    let mut hello_args = BTreeMap::new();
+    hello_args.insert("secretHash".to_string(), text(&secret_hash));
+    hello_args.insert(
         "capabilities".to_string(),
         capabilities_value(
             gpu_reader.present(),
@@ -398,11 +408,15 @@ pub async fn run(path: PathBuf, stop: Arc<Notify>) {
             &drives,
         ),
     );
-    reg_args.insert("agentVersion".to_string(), text(env!("CARGO_PKG_VERSION")));
-    if !push(&mut client, "agent:register", reg_args).await {
-        exit(1);
+    hello_args.insert("agentVersion".to_string(), text(env!("CARGO_PKG_VERSION")));
+    while !push(&mut client, "agent:hello", hello_args.clone()).await {
+        say!("not paired yet: run `pc-monitor-agent pair`; retrying in 60 s");
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(60)) => {}
+            _ = stop.notified() => return,
+        }
     }
-    say!("registered");
+    say!("connected as a paired device");
 
     let viewer_until = Arc::new(AtomicU64::new(0));
     watch_viewer(client.clone(), secret_hash.clone(), viewer_until.clone());

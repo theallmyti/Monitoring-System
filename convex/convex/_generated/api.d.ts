@@ -11,6 +11,8 @@
 import type * as agent from "../agent.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
+import type * as model from "../model.js";
+import type * as pairing from "../pairing.js";
 import type * as summaries from "../summaries.js";
 import type * as validators from "../validators.js";
 
@@ -24,6 +26,8 @@ declare const fullApi: ApiFromModules<{
   agent: typeof agent;
   crons: typeof crons;
   dashboard: typeof dashboard;
+  model: typeof model;
+  pairing: typeof pairing;
   summaries: typeof summaries;
   validators: typeof validators;
 }>;
