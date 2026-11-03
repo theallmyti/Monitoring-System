@@ -54,5 +54,8 @@ export default defineSchema({
     cpuTempMax: v.optional(v.number()),
     gpuTempMax: v.optional(v.number()),
     gpuUtilAvg: v.optional(v.number()),
-  }).index("by_device_time", ["deviceId", "minuteTs"]),
+  })
+    .index("by_device_time", ["deviceId", "minuteTs"])
+    // For the daily retention job across all devices (FR-50).
+    .index("by_minute", ["minuteTs"]),
 });

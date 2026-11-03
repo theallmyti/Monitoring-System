@@ -86,13 +86,13 @@ export function DeviceSection({ device, token, range }: { device: Device; token:
           </div>
 
           <div className="charts">
-            <LineChart title="CPU use" unit="%" points={series((s) => s.cpuUtil)} min={0} max={100} />
-            <LineChart title="RAM" unit="%" points={series((s) => s.ramPct)} min={0} max={100} limit={RAM_LIMIT} />
+            <LineChart title="CPU use · avg" unit="%" points={series((s) => s.cpuUtilAvg)} min={0} max={100} />
+            <LineChart title="RAM · avg" unit="%" points={series((s) => s.ramPctAvg)} min={0} max={100} limit={RAM_LIMIT} />
             {l.cpu.packageTemp !== undefined && (
               <LineChart
-                title="CPU temperature"
+                title="CPU temperature · peak"
                 unit="°C"
-                points={series((s) => s.cpuTemp)}
+                points={series((s) => s.cpuTempMax)}
                 min={20}
                 max={Math.max(100, CPU_TEMP_LIMIT + 5)}
                 limit={CPU_TEMP_LIMIT}
@@ -100,9 +100,9 @@ export function DeviceSection({ device, token, range }: { device: Device; token:
             )}
             {l.gpu && (
               <LineChart
-                title="GPU temperature"
+                title="GPU temperature · peak"
                 unit="°C"
-                points={series((s) => s.gpuTemp)}
+                points={series((s) => s.gpuTempMax)}
                 min={20}
                 max={Math.max(100, GPU_TEMP_LIMIT + 5)}
                 limit={GPU_TEMP_LIMIT}

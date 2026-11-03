@@ -10,30 +10,30 @@ Common verification commands:
 ## Phase 1: Data path (quota-critical)
 
 ### Task 1: Backend: summaries with avg/max, viewer flag
-- [ ] `agent:pushSummary` stores one row per minute with Database.md fields (cpuUtilAvg/Max, cpuTempAvg/Max, gpuTempMax, gpuUtilAvg, ramPctAvg/Max) and updates `lastSeenAt`
-- [ ] `devices.viewerUntil` (optional); `agent:watchViewer` returns it for the device's secret hash; `dashboard:setViewer` sets now + 30 s (token-gated until Task 8)
-- [ ] `pushLatest` no longer writes summaries; convex-test tests cover all three functions
+- [x] `agent:pushSummary` stores one row per minute with Database.md fields (cpuUtilAvg/Max, cpuTempAvg/Max, gpuTempMax, gpuUtilAvg, ramPctAvg/Max) and updates `lastSeenAt`
+- [x] `devices.viewerUntil` (optional); `agent:watchViewer` returns it for the device's secret hash; `dashboard:setViewer` sets now + 30 s (token-gated until Task 8)
+- [x] `pushLatest` no longer writes summaries; convex-test tests cover all three functions
 - **Files:** `convex/convex/schema.ts`, `agent.ts`, `dashboard.ts`, `convex/convex/agent.test.ts`, `convex/package.json`
 - **Depends on:** none · **Size:** M
 
 ### Task 2: Agent: aggregator, summary loop, live only while viewing
-- [ ] 1 s samples are aggregated to a 60 s avg/max summary (unit-tested), sent via `agent:pushSummary`
-- [ ] Live `pushLatest` runs only while `viewerUntil > now` (subscription to `agent:watchViewer`)
-- [ ] Reconnects with backoff 1 s → 60 s after network loss (FR-34)
+- [x] 1 s samples are aggregated to a 60 s avg/max summary (unit-tested), sent via `agent:pushSummary`
+- [x] Live `pushLatest` runs only while `viewerUntil > now` (subscription to `agent:watchViewer`)
+- [x] Reconnects with backoff 1 s → 60 s after network loss (FR-34)
 - **Files:** `agent/src/aggregator.rs`, `agent/src/main.rs`, `agent/src/transport.rs`
 - **Depends on:** 1 · **Size:** M
 
 ### Task 3: Dashboard heartbeat and online status; retention cron
-- [ ] Dashboard calls `setViewer` every 15 s while open; charts read the new summary fields
-- [ ] Online = `lastSeenAt` within 3 min
-- [ ] Daily cron deletes summaries older than 7 days, in batches (FR-50), with a test
+- [x] Dashboard calls `setViewer` every 15 s while open; charts read the new summary fields
+- [x] Online = `lastSeenAt` within 3 min
+- [x] Daily cron deletes summaries older than 7 days, in batches (FR-50), with a test
 - **Files:** `dashboard/src/*`, `convex/convex/crons.ts`, `convex/convex/summaries.ts`
 - **Depends on:** 1, 2 · **Size:** M
 
 ### Checkpoint A
 - [ ] All tests pass; agent on laptop and Pi updated; Aditya deploys prod
 - [ ] Convex usage projected below 80 % of quota (Testing.md §5)
-- [ ] Live pushes stop within 30 s of closing the dashboard (T-21)
+- [x] Live pushes stop within 30 s of closing the dashboard (T-21) — verified 3 Nov
 
 ## Phase 2: Accounts and pairing
 

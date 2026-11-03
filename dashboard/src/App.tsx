@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "convex/react";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { anyApi } from "convex/server";
 import { Device, Overview, RANGES, Range } from "./types";
 import { DeviceSection, CPU_TEMP_LIMIT, GPU_TEMP_LIMIT, RAM_LIMIT } from "./DeviceSection";
@@ -71,6 +71,25 @@ function TokenScreen({ onSave }: { onSave: (t: string) => void }) {
 function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void }) {
   const [range, setRange] = useState<Range>(RANGES[0]);
   const data = useQuery(anyApi.dashboard.overview, { token }) as Overview | undefined;
+  const setViewer = useMutation(anyApi.dashboard.setViewer);
+  const deviceIds = (data?.devices ?? []).map((d) => d.id).join(",");
+
+  // FR-33: while this page is visible, keep live data flowing (now + 30 s, renewed every 15 s).
+  useEffect(() => {
+    if (!deviceIds) return;
+    const ids = deviceIds.split(",");
+    const beat = () => {
+      if (document.visibilityState !== "visible") return;
+      for (const id of ids) setViewer({ token, deviceId: id }).catch(() => {});
+    };
+    beat();
+    const timer = setInterval(beat, 15_000);
+    document.addEventListener("visibilitychange", beat);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", beat);
+    };
+  }, [deviceIds, token, setViewer]);
 
   if (data === undefined) {
     return (

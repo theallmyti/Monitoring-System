@@ -20,17 +20,19 @@ export interface Overview {
   devices: Device[];
 }
 
-// One stored history sample (convex/convex/schema.ts summaries).
+// One stored minute: averages and peaks (convex/convex/schema.ts summaries).
 export interface Summary {
   _id: string;
   deviceId: string;
   minuteTs: number;
-  cpuUtil: number;
-  ramPct: number;
-  cpuTemp?: number;
-  gpuTemp?: number;
-  gpuUtil?: number;
-  vramPct?: number;
+  cpuUtilAvg: number;
+  cpuUtilMax: number;
+  ramPctAvg: number;
+  ramPctMax: number;
+  cpuTempAvg?: number;
+  cpuTempMax?: number;
+  gpuTempMax?: number;
+  gpuUtilAvg?: number;
 }
 
 export interface Range {

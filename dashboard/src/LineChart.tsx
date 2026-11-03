@@ -37,7 +37,7 @@ export function LineChart({ title, unit, points, min, max, limit }: Props) {
     return (
       <figure className="chart" onPointerMove={onReveal}>
         <figcaption>{title}</figcaption>
-        <p className="chart-empty">Collecting. One sample is stored per minute.</p>
+        <p className="chart-empty">Collecting. One summary is stored per minute.</p>
       </figure>
     );
   }
