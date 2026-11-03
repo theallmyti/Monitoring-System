@@ -111,7 +111,8 @@ Common verification commands:
 ### Task 16: RAM and CPU targets
 - [ ] Measure idle and live RSS/CPU on all devices (Testing.md §3); fix the laptop's ~41 MB; record results in README
   - 3 Nov, laptop (release, 3 min each): idle 40.7 MB / 0.41 %, live 41.3 MB / 0.80 %. After skipping WMI sensors on Windows: idle 37.0 MB / 0.19 %. Without NVML (test build): 19.7 MB working set, 7.3 MB private. NVML costs ~17 MB. Pi: 9.8 MB RSS, ~0.1 % CPU.
-  - Open decision: GPU machines exceed 20 MB because of NVIDIA's library.
+  - Decision (4 Nov): NVIDIA library only while someone is watching; otherwise read every 30 s. NVML cannot be unloaded on Windows, so it runs in a helper process (`pc-monitor-agent gpu`).
+  - 4 Nov, laptop: idle agent 23.2 MB working set / 7.5 MB private, CPU 0.29 % + 0.28 % for GPU readings = 0.57 %. Live: agent 23.9 MB + helper 31.8 MB, CPU 0.72 %.
 - **Size:** S
 
 ### Checkpoint D (feature freeze 1 Dec)

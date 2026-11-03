@@ -283,6 +283,11 @@ fn watch_viewer(mut client: ConvexClient, secret_hash: String, viewer_until: Arc
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    // Helper mode: read the GPU in a separate process (see gpu.rs).
+    if std::env::args().nth(1).as_deref() == Some("gpu") {
+        let every_ms = std::env::args().nth(2).and_then(|v| v.parse().ok());
+        exit(gpu::run_helper(every_ms));
+    }
     if std::env::args().nth(1).as_deref() == Some("sensors") {
         print_sensors();
         return;
@@ -314,7 +319,7 @@ async fn main() {
     )
     .expect("failed to read system info");
     // No NVIDIA driver means no GPU stats; the rest of the agent keeps running (NFR-07).
-    let nvml = gpu::init().ok();
+    let mut gpu_reader = gpu::GpuReader::new().await;
     // Windows no-driver mode has no temperature sensors, and listing them goes through WMI,
     // which loads heavy system libraries. Keep an empty list there (Task 16, NFR-01).
     let mut components = if cfg!(windows) {
@@ -332,7 +337,11 @@ async fn main() {
     println!(
         "device={device_name} convex={} gpu={} drives={}",
         config.convex_url,
-        if nvml.is_some() { "nvidia" } else { "none" },
+        if gpu_reader.present() {
+            "nvidia"
+        } else {
+            "none"
+        },
         drives.len()
     );
     let mut client = connect(&config.convex_url).await;
@@ -351,7 +360,7 @@ async fn main() {
     reg_args.insert(
         "capabilities".to_string(),
         capabilities_value(
-            nvml.is_some(),
+            gpu_reader.present(),
             battery_reader.is_some(),
             &components,
             &drives,
@@ -406,17 +415,15 @@ async fn main() {
             battery_now = r.read();
         }
 
+        let now = now_ms();
+        // Live: only while a viewer is present (FR-31).
+        let live = viewer_until.load(Ordering::Relaxed) > now;
+
         let cpu_util = sys.global_cpu_usage() as f64;
         let ram_pct = sys.used_memory() as f64 / sys.total_memory() as f64 * 100.0;
         let cpu_t = cpu_temp(&components);
-        let gpu = match nvml.as_ref().map(gpu::read) {
-            Some(Ok(g)) => Some(g),
-            Some(Err(e)) => {
-                eprintln!("gpu read failed: {e}");
-                None
-            }
-            None => None,
-        };
+        // GPU: every second while live; every 30 s otherwise, without keeping NVML loaded.
+        let gpu = gpu_reader.read(live).await;
         aggregator.push(Sample {
             cpu_util,
             ram_pct,
@@ -426,11 +433,8 @@ async fn main() {
             battery_pct: battery_now.as_ref().map(|b| b.pct),
         });
 
-        let now = now_ms();
         let summary_due = Instant::now() >= next_summary;
 
-        // Live: only while a viewer is present (FR-31).
-        let live = viewer_until.load(Ordering::Relaxed) > now;
         if live != was_live {
             println!(
                 "{}",
