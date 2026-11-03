@@ -57,7 +57,7 @@ export const pushLatest = mutation({
     if (!device) {
       throw new ConvexError("unknown device");
     }
-    await ctx.db.patch(device._id, { lastSeenAt: args.ts });
+    // lastSeenAt is set by summaries only (Architecture.md §2.2), not per live push.
     const row = {
       deviceId: device._id,
       ts: args.ts,

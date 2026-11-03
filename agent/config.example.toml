@@ -1,15 +1,11 @@
 ﻿# PC Monitor agent config.
-# Copy to config.toml (gitignored) and fill in device_secret after `agent pair` (not yet built).
+# Copy to config.toml (gitignored). The device secret is generated on first run.
 
-# Convex cloud endpoints for the team deployment (not secret).
+# Convex cloud endpoint for the team deployment (not secret).
 convex_url = "https://tidy-newt-65.convex.cloud"
-http_actions_url = "https://tidy-newt-65.convex.site"
 
 # Team registration secret. Ask the other team member privately; never commit it.
 # registration_secret = "paste-here"
-
-# Seconds between summaries (docs/SRS.md FR-30).
-summary_interval_secs = 60
 
 # Seconds between live pushes while a viewer is present (FR-31).
 live_interval_secs = 1

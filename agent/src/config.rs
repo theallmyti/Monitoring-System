@@ -9,8 +9,6 @@ use std::path::Path;
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Config {
     pub convex_url: String,
-    pub http_actions_url: String,
-    pub summary_interval_secs: u64,
     pub live_interval_secs: u64,
     /// 256-bit device secret as hex. Generated on first run (docs/Security.md §6).
     #[serde(default)]
@@ -41,15 +39,10 @@ impl std::fmt::Display for ConfigError {
 }
 
 impl Config {
-    /// Parse a config from TOML text.
-    pub fn from_toml(text: &str) -> Result<Config, ConfigError> {
-        toml::from_str(text).map_err(ConfigError::Parse)
-    }
-
     /// Read and parse a config file from disk.
     pub fn load(path: &Path) -> Result<Config, ConfigError> {
         let text = fs::read_to_string(path).map_err(ConfigError::Read)?;
-        Config::from_toml(&text)
+        toml::from_str(&text).map_err(ConfigError::Parse)
     }
 
     /// Return the device secret, generating and saving a new one if the config has none.
@@ -90,21 +83,16 @@ mod tests {
 
     #[test]
     fn parses_example_config() {
-        let text = include_str!("../config.example.toml");
-        let cfg = Config::from_toml(text).expect("example config must parse");
+        let cfg: Config = toml::from_str(include_str!("../config.example.toml"))
+            .expect("example config must parse");
         assert_eq!(cfg.convex_url, "https://tidy-newt-65.convex.cloud");
-        assert_eq!(
-            cfg.http_actions_url,
-            "https://tidy-newt-65.convex.site"
-        );
-        assert_eq!(cfg.summary_interval_secs, 60);
         assert_eq!(cfg.live_interval_secs, 1);
         assert_eq!(cfg.device_secret, None);
     }
 
     #[test]
     fn rejects_missing_field() {
-        assert!(Config::from_toml("convex_url = \"x\"").is_err());
+        assert!(toml::from_str::<Config>("convex_url = \"x\"").is_err());
     }
 
     #[test]
@@ -114,5 +102,21 @@ mod tests {
             secret_hash("abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn generates_secret_once_and_keeps_it() {
+        let path = std::env::temp_dir().join(format!("pcm-test-{}.toml", std::process::id()));
+        fs::write(&path, "convex_url = \"x\"\nlive_interval_secs = 1\n").unwrap();
+
+        let mut cfg = Config::load(&path).unwrap();
+        let first = cfg.ensure_device_secret(&path).unwrap();
+        assert_eq!(first.len(), 64, "256-bit secret as 64 hex chars");
+
+        // Second run reads the saved secret back instead of making a new one.
+        let mut again = Config::load(&path).unwrap();
+        assert_eq!(again.ensure_device_secret(&path).unwrap(), first);
+
+        fs::remove_file(&path).unwrap();
     }
 }
