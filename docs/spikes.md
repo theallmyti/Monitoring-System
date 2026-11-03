@@ -33,8 +33,10 @@ Convex deployment: `different-alpaca-219` (cloud `https://different-alpaca-219.c
 
 **Notes**
 - The Convex client needs a `tokio` runtime. The agent uses `current_thread` to save RAM.
-- `spike:pushLatest` has **no auth yet**. Device-secret checks come in week 2 (`Security.md`). Spike rows are deleted before week 3.
-- Measured RAM is for a debug-free release build. Re-measure after the real collectors land.
+- **Auth (added after first run):** the agent generates a 256-bit device secret on first run (saved in `config.toml`, gitignored) and sends only its SHA-256 hash (`Flow.md` §3). Backend `agent:register` / `agent:pushLatest` look the device up by hash; unknown hashes are rejected (`unknown device`, verified). Tables are the subset from `Database.md`: `devices`, `latest`.
+- **Still open until week 2:** `agent:register` is open (no pairing or user link yet), so devices created now are test data (`isFake: true`). Pairing will link devices to users. `config.toml` permissions are not restricted yet (`Security.md` §6).
+- **Deployment:** the backend is live on the **dev** deployment (`different-alpaca-219`). The production deployment (`tidy-newt-65`) is still to be updated; the agent config points at dev until that deploy is approved.
+- Measured RAM is for a release build. Re-measure after the real collectors land.
 
 ---
 

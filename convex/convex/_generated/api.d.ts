@@ -8,7 +8,7 @@
  * @module
  */
 
-import type * as spike from "../spike.js";
+import type * as agent from "../agent.js";
 
 import type {
   ApiFromModules,
@@ -17,7 +17,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  spike: typeof spike;
+  agent: typeof agent;
 }>;
 
 /**

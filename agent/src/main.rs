@@ -1,6 +1,7 @@
-﻿//! S4 spike: push CPU and RAM to Convex every `live_interval_secs`.
-//! Learning goal: async Rust, the Convex Rust client, measuring agent RAM.
-//! Source: https://docs.convex.dev/client/rust and https://docs.rs/convex/0.10.4 (ConvexClient::new, ::mutation).
+﻿//! S4 spike, now against the backend: push CPU and RAM every `live_interval_secs`.
+//! Learning goal: async Rust, the Convex Rust client, device-secret auth.
+//! Source: https://docs.convex.dev/client/rust and https://docs.rs/convex/0.10.4
+//! (ConvexClient::new, ::mutation).
 
 mod config;
 
@@ -17,13 +18,21 @@ async fn main() {
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "config.toml".to_string());
-    let config = match config::Config::load(Path::new(&path)) {
+    let mut config = match config::Config::load(Path::new(&path)) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e} (expected at {path}; copy config.example.toml)");
             exit(1);
         }
     };
+    let secret = match config.ensure_device_secret(Path::new(&path)) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{e}");
+            exit(1);
+        }
+    };
+    let secret_hash = config::secret_hash(&secret);
 
     let device_name = System::host_name().unwrap_or_else(|_| "unknown".to_string());
     println!("device={device_name} convex={}", config.convex_url);
@@ -35,6 +44,22 @@ async fn main() {
             exit(1);
         }
     };
+
+    // Register (or refresh) this device. Pairing comes in week 2.
+    let mut reg_args = BTreeMap::new();
+    reg_args.insert("secretHash".to_string(), Value::String(secret_hash.clone()));
+    reg_args.insert("name".to_string(), Value::String(device_name.clone()));
+    match client.mutation("agent:register", reg_args).await {
+        Ok(FunctionResult::Value(_)) => println!("registered"),
+        Ok(other) => {
+            eprintln!("register failed: {other:?}");
+            exit(1);
+        }
+        Err(e) => {
+            eprintln!("register failed: {e}");
+            exit(1);
+        }
+    }
 
     let mut sys = System::new_with_specifics(
         RefreshKind::nothing()
@@ -60,12 +85,12 @@ async fn main() {
         let ram_pct = sys.used_memory() as f64 / sys.total_memory() as f64 * 100.0;
 
         let mut args = BTreeMap::new();
-        args.insert("deviceName".to_string(), Value::String(device_name.clone()));
+        args.insert("secretHash".to_string(), Value::String(secret_hash.clone()));
         args.insert("ts".to_string(), Value::Float64(ts));
         args.insert("cpuUtil".to_string(), Value::Float64(cpu_util));
         args.insert("ramUsedPct".to_string(), Value::Float64(ram_pct));
 
-        match client.mutation("spike:pushLatest", args).await {
+        match client.mutation("agent:pushLatest", args).await {
             Ok(FunctionResult::Value(_)) => {
                 println!("pushed cpu={cpu_util:.1}% ram={ram_pct:.1}%");
             }
