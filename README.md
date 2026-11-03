@@ -6,4 +6,4 @@ Lightweight hardware monitor: a Rust agent on each PC/Pi/server, Convex cloud ba
 - Agent: [`agent/`](agent/) — `copy config.example.toml config.toml` then `cargo run`.
 - Status: Week 1 (spikes). MVP due 3 Dec 2026.
 
-Licence: MIT (to be added).
+Licence: MIT — see [LICENSE](LICENSE).

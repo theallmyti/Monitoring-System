@@ -1,68 +1,77 @@
-//! S1 spike: print CPU util, RAM and temperature once per second.
-//! Learning goal: basic Rust, sysinfo crate API.
+﻿//! S4 spike: push CPU and RAM to Convex every `live_interval_secs`.
+//! Learning goal: async Rust, the Convex Rust client, measuring agent RAM.
+//! Source: https://docs.convex.dev/client/rust and https://docs.rs/convex/0.10.4 (ConvexClient::new, ::mutation).
 
 mod config;
-use std::thread::sleep;
-use std::time::Duration;
 
-use sysinfo::{Components, CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::process::exit;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-fn main() {
+use convex::{ConvexClient, FunctionResult, Value};
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "config.toml".to_string());
-    let config = match config::Config::load(std::path::Path::new(&path)) {
+    let config = match config::Config::load(Path::new(&path)) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e} (expected at {path}; copy config.example.toml)");
-            std::process::exit(1);
+            exit(1);
         }
     };
-    println!("Convex: {}", config.convex_url);
+
+    let device_name = System::host_name().unwrap_or_else(|_| "unknown".to_string());
+    println!("device={device_name} convex={}", config.convex_url);
+
+    let mut client = match ConvexClient::new(&config.convex_url).await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("cannot connect to Convex: {e}");
+            exit(1);
+        }
+    };
+
     let mut sys = System::new_with_specifics(
         RefreshKind::nothing()
             .with_cpu(CpuRefreshKind::everything())
             .with_memory(MemoryRefreshKind::everything()),
     )
     .expect("failed to read system info");
-    let mut components = Components::new_with_refreshed_list().expect("failed to read sensors");
 
     // CPU usage needs two samples separated by a short delay.
-    sleep(Duration::from_millis(500));
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
+    let mut ticker = tokio::time::interval(Duration::from_secs(config.live_interval_secs));
     loop {
+        ticker.tick().await;
         sys.refresh_cpu_usage();
         sys.refresh_memory();
-        components.refresh(false);
 
-        let cpu_total = sys.global_cpu_usage();
-        let total_mem = sys.total_memory();
-        let used_mem = sys.used_memory();
-        let mem_pct = used_mem as f64 / total_mem as f64 * 100.0;
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as f64)
+            .unwrap_or(0.0);
+        let cpu_util = sys.global_cpu_usage() as f64;
+        let ram_pct = sys.used_memory() as f64 / sys.total_memory() as f64 * 100.0;
 
-        // Pick the hottest sensor that looks like a CPU temperature.
-        let cpu_temp = components
-            .iter()
-            .filter(|c| {
-                let l = c.label().to_lowercase();
-                l.contains("cpu") || l.contains("package") || l.contains("core")
-            })
-            .filter_map(|c| c.temperature())
-            .fold(None, |max: Option<f32>, t| {
-                Some(max.map_or(t, |m| m.max(t)))
-            });
+        let mut args = BTreeMap::new();
+        args.insert("deviceName".to_string(), Value::String(device_name.clone()));
+        args.insert("ts".to_string(), Value::Float64(ts));
+        args.insert("cpuUtil".to_string(), Value::Float64(cpu_util));
+        args.insert("ramUsedPct".to_string(), Value::Float64(ram_pct));
 
-        let temp_text = match cpu_temp {
-            Some(t) => format!("{t:.1} Ã‚Â°C"),
-            None => "n/a (no driver or sensor)".to_string(),
-        };
-
-        println!(
-            "CPU {cpu_total:5.1}% | RAM {:.1}/{:.1} GB ({mem_pct:4.1}%) | CPU temp {temp_text}",
-            used_mem as f64 / 1_073_741_824.0,
-            total_mem as f64 / 1_073_741_824.0,
-        );
-
-        sleep(Duration::from_secs(1));
+        match client.mutation("spike:pushLatest", args).await {
+            Ok(FunctionResult::Value(_)) => {
+                println!("pushed cpu={cpu_util:.1}% ram={ram_pct:.1}%");
+            }
+            Ok(FunctionResult::ErrorMessage(msg)) => eprintln!("convex error: {msg}"),
+            Ok(FunctionResult::ConvexError(err)) => eprintln!("convex error: {err:?}"),
+            Err(e) => eprintln!("push failed: {e}"),
+        }
     }
 }
