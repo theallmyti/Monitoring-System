@@ -8,6 +8,7 @@ pub struct Sample {
     pub cpu_temp: Option<f64>,
     pub gpu_temp: Option<f64>,
     pub gpu_util: Option<f64>,
+    pub battery_pct: Option<f64>,
 }
 
 /// What `agent:pushSummary` stores (docs/Database.md summaries).
@@ -21,6 +22,7 @@ pub struct Summary {
     pub cpu_temp_max: Option<f64>,
     pub gpu_temp_max: Option<f64>,
     pub gpu_util_avg: Option<f64>,
+    pub battery_pct: Option<f64>,
 }
 
 #[derive(Default)]
@@ -49,6 +51,7 @@ impl Aggregator {
             cpu_temp_max: max(s.iter().filter_map(|x| x.cpu_temp)),
             gpu_temp_max: max(s.iter().filter_map(|x| x.gpu_temp)),
             gpu_util_avg: avg(s.iter().filter_map(|x| x.gpu_util)),
+            battery_pct: avg(s.iter().filter_map(|x| x.battery_pct)),
         })
     }
 }

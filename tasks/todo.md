@@ -95,7 +95,8 @@ Common verification commands:
 - **Size:** M
 
 ### Task 13: RAM details, usage time, battery
-- [ ] Battery on laptops (FR-25); active time today and boot/sleep log (FR-24). RAM detail and uptime were done in Task 12.
+- [x] Battery on laptops (FR-25): charge, charging, health, cycles (when Windows reports them), power rate; charge in summaries
+- [ ] Active time today and boot/sleep log (FR-24). RAM detail and uptime were done in Task 12.
 - **Size:** M
 
 ### Task 14: Supervisor

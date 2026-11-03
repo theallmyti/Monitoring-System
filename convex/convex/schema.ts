@@ -3,7 +3,7 @@
 // isFake: true marks test rows; they are deleted before week 3.
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
+import { battery, capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
 
 export default defineSchema({
   devices: defineTable({
@@ -36,6 +36,7 @@ export default defineSchema({
     }),
     disks: v.optional(v.array(driveLive)),
     uptimeSec: v.optional(v.number()),
+    battery: v.optional(battery),
     // Optional: only NVIDIA machines send it. Units: MB, W, MHz, %.
     gpu: v.optional(
       v.object({
@@ -57,7 +58,7 @@ export default defineSchema({
   }).index("by_device", ["deviceId"]),
 
   // One row per device per minute: averages and peaks of the agent's 1 s samples
-  // (docs/Database.md summaries). Battery and collector status are added in Tasks 13–14.
+  // (docs/Database.md summaries). Collector status is added in Task 14.
   summaries: defineTable({
     deviceId: v.id("devices"),
     minuteTs: v.number(),
@@ -70,6 +71,7 @@ export default defineSchema({
     gpuTempMax: v.optional(v.number()),
     gpuUtilAvg: v.optional(v.number()),
     disks: v.optional(v.array(driveSummary)),
+    batteryPct: v.optional(v.number()),
   })
     .index("by_device_time", ["deviceId", "minuteTs"])
     // For the daily retention job across all devices (FR-50).

@@ -4,6 +4,7 @@
 //! reconnects by itself with backoff, so only the first connection is retried here).
 
 mod aggregator;
+mod battery;
 mod collectors;
 mod config;
 mod dashboard;
@@ -30,6 +31,7 @@ const PUSH_TIMEOUT: Duration = Duration::from_secs(5);
 const PROCESS_EVERY: u64 = 5;
 const DRIVES_EVERY: u64 = 10;
 const DOCKER_EVERY: u64 = 10;
+const BATTERY_EVERY: u64 = 10;
 
 /// Hottest CPU sensor in Celsius. Raspberry Pi: cpu_thermal. Linux x86: coretemp/k10temp.
 fn cpu_temp(components: &Components) -> Option<f64> {
@@ -144,9 +146,14 @@ fn procs_value(procs: &[Proc]) -> Value {
 }
 
 /// FR-15: what this device can report (docs/Database.md §2).
-fn capabilities_value(has_gpu: bool, components: &Components, drives: &[Drive]) -> Value {
+fn capabilities_value(
+    has_gpu: bool,
+    has_battery: bool,
+    components: &Components,
+    drives: &[Drive],
+) -> Value {
     let mut o = BTreeMap::new();
-    o.insert("hasBattery".to_string(), Value::Boolean(false)); // Task 13 adds the battery reader
+    o.insert("hasBattery".to_string(), Value::Boolean(has_battery));
     o.insert("hasNvidiaGpu".to_string(), Value::Boolean(has_gpu));
     o.insert(
         "perCoreTemps".to_string(),
@@ -190,6 +197,7 @@ fn summary_args(
         ("cpuTempMax", s.cpu_temp_max),
         ("gpuTempMax", s.gpu_temp_max),
         ("gpuUtilAvg", s.gpu_util_avg),
+        ("batteryPct", s.battery_pct),
     ];
     for (key, value) in optional {
         if let Some(v) = value {
@@ -310,6 +318,9 @@ async fn main() {
     let mut components = Components::new_with_refreshed_list().expect("failed to read sensors");
     let mut disks = Disks::new_with_refreshed_list().ok();
     let mut drives = disks.as_ref().map(collectors::drives).unwrap_or_default();
+    // None on machines without a battery; then no battery data is sent.
+    let mut battery_reader = battery::BatteryReader::new();
+    let mut battery_now: Option<battery::BatteryStats> = None;
 
     let device_name = System::host_name().unwrap_or_else(|_| "unknown".to_string());
     println!(
@@ -333,7 +344,12 @@ async fn main() {
     reg_args.insert("name".to_string(), text(&device_name));
     reg_args.insert(
         "capabilities".to_string(),
-        capabilities_value(nvml.is_some(), &components, &drives),
+        capabilities_value(
+            nvml.is_some(),
+            battery_reader.is_some(),
+            &components,
+            &drives,
+        ),
     );
     reg_args.insert("agentVersion".to_string(), text(env!("CARGO_PKG_VERSION")));
     if !push(&mut client, "agent:register", reg_args).await {
@@ -375,6 +391,13 @@ async fn main() {
             }
         }
 
+        // Battery changes slowly: read it every 10 s.
+        if tick % BATTERY_EVERY == 1
+            && let Some(r) = battery_reader.as_mut()
+        {
+            battery_now = r.read();
+        }
+
         let cpu_util = sys.global_cpu_usage() as f64;
         let ram_pct = sys.used_memory() as f64 / sys.total_memory() as f64 * 100.0;
         let cpu_t = cpu_temp(&components);
@@ -392,6 +415,7 @@ async fn main() {
             cpu_temp: cpu_t,
             gpu_temp: gpu.as_ref().map(|g| f64::from(g.temp_c)),
             gpu_util: gpu.as_ref().map(|g| f64::from(g.util_pct)),
+            battery_pct: battery_now.as_ref().map(|b| b.pct),
         });
 
         let now = now_ms();
@@ -467,6 +491,17 @@ async fn main() {
             }
             if let Some(g) = &gpu {
                 args.insert("gpu".to_string(), gpu_value(g));
+            }
+            if let Some(b) = &battery_now {
+                let mut o = BTreeMap::new();
+                o.insert("pct".to_string(), num(b.pct));
+                o.insert("charging".to_string(), Value::Boolean(b.charging));
+                o.insert("healthPct".to_string(), num(b.health_pct));
+                o.insert("rateW".to_string(), num(b.rate_w));
+                if let Some(c) = b.cycles {
+                    o.insert("cycles".to_string(), num(f64::from(c)));
+                }
+                args.insert("battery".to_string(), Value::Object(o));
             }
             push(&mut client, "agent:pushLatest", args).await;
         } else if !top.is_empty() {

@@ -19,6 +19,15 @@ export const ramDetail = v.object({
 // Top processes by memory, grouped by name (FR-23).
 export const topProc = v.object({ name: v.string(), mb: v.number() });
 
+// latest.battery on laptops (FR-25). rateW is charge or discharge power.
+export const battery = v.object({
+  pct: v.number(),
+  charging: v.boolean(),
+  healthPct: v.optional(v.number()),
+  cycles: v.optional(v.number()),
+  rateW: v.optional(v.number()),
+});
+
 // What the device can report, sent at registration (FR-15, docs/Database.md §2).
 export const capabilities = v.object({
   hasBattery: v.boolean(),

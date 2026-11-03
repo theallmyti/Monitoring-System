@@ -155,3 +155,18 @@ test("impossible drive values are rejected", async () => {
     }),
   ).rejects.toThrow(/disk value out of range/);
 });
+
+test("pushLatest stores the battery and rejects impossible charge", async () => {
+  const { t } = await setup();
+  const base = { secretHash: HASH, ts: Date.now(), cpuUtil: 20, ramUsedPct: 50 };
+  await t.mutation(api.agent.pushLatest, {
+    ...base,
+    battery: { pct: 80, charging: true, healthPct: 92, cycles: 140, rateW: 35 },
+  });
+  const [row] = await t.run((ctx) => ctx.db.query("latest").collect());
+  expect(row.battery).toEqual({ pct: 80, charging: true, healthPct: 92, cycles: 140, rateW: 35 });
+
+  await expect(
+    t.mutation(api.agent.pushLatest, { ...base, battery: { pct: 120, charging: false } }),
+  ).rejects.toThrow(/battery value out of range/);
+});

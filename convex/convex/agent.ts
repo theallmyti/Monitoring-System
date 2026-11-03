@@ -7,7 +7,7 @@
 // No public read endpoint: the app reads through pairing in week 2.
 import { mutation, query, QueryCtx } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
-import { capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
+import { battery, capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
 
 // docs/Security.md §2: at most one summary per 50 s per device.
 const SUMMARY_MIN_GAP_MS = 50_000;
@@ -62,6 +62,7 @@ export const pushLatest = mutation({
     topProcs: v.optional(v.array(topProc)),
     disks: v.optional(v.array(driveLive)),
     uptimeSec: v.optional(v.number()),
+    battery: v.optional(battery),
     gpu: v.optional(
       v.object({
         temp: v.number(),
@@ -91,6 +92,9 @@ export const pushLatest = mutation({
     if (args.disks?.some((d) => d.freeGB < 0 || d.freeGB > d.totalGB)) {
       throw new ConvexError("disk value out of range");
     }
+    if (args.battery && (args.battery.pct < 0 || args.battery.pct > 100)) {
+      throw new ConvexError("battery value out of range");
+    }
     const device = await deviceBySecretHash(ctx, args.secretHash);
     if (!device) {
       throw new ConvexError("unknown device");
@@ -103,6 +107,7 @@ export const pushLatest = mutation({
       ram: { usedPct: args.ramUsedPct, detail: args.ram, topProcs: args.topProcs },
       disks: args.disks,
       uptimeSec: args.uptimeSec,
+      battery: args.battery,
       gpu: args.gpu,
       pi: args.docker ? { docker: args.docker } : undefined,
     };
@@ -132,13 +137,21 @@ export const pushSummary = mutation({
     gpuTempMax: v.optional(v.number()),
     gpuUtilAvg: v.optional(v.number()),
     disks: v.optional(v.array(driveSummary)),
+    batteryPct: v.optional(v.number()),
   },
   handler: async (ctx, { secretHash, ...summary }) => {
     if (summary.disks?.some((d) => d.freeGB < 0 || d.freePct < 0 || d.freePct > 100)) {
       throw new ConvexError("disk value out of range");
     }
     // FR-28: reject impossible values.
-    const percents = [summary.cpuUtilAvg, summary.cpuUtilMax, summary.ramPctAvg, summary.ramPctMax, summary.gpuUtilAvg];
+    const percents = [
+      summary.cpuUtilAvg,
+      summary.cpuUtilMax,
+      summary.ramPctAvg,
+      summary.ramPctMax,
+      summary.gpuUtilAvg,
+      summary.batteryPct,
+    ];
     const temps = [summary.cpuTempAvg, summary.cpuTempMax, summary.gpuTempMax];
     if (
       percents.some((p) => p !== undefined && (p < 0 || p > 100)) ||
