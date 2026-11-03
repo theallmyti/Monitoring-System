@@ -17,6 +17,7 @@ Tags: **[A]** = Aditya · **[T]** = Tirth
 - Spike S4: agent pushes CPU/RAM to Convex every second (`spike:pushLatest`, `isFake: true`); findings in `docs/spikes.md`. [A]
 - Backend: `devices` and `latest` tables (subset of Database.md) and `agent:register` / `agent:pushLatest` (read endpoint removed until pairing), authenticated by SHA-256 of the device secret. [A]
 - Agent: generates a 256-bit device secret on first run and sends only its hash. [A]
+- Backend deployed to prod (`tidy-newt-65`); agent config points at prod. [A]
 - Security: `agent:register` needs the team registration secret; public read endpoint removed until pairing. [A]
 - MIT `LICENSE` (Aditya Prasad, Tirth Patel). [A+T]
 

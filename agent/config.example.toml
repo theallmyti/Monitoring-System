@@ -2,8 +2,8 @@
 # Copy to config.toml (gitignored) and fill in device_secret after `agent pair` (not yet built).
 
 # Convex cloud endpoints for the team deployment (not secret).
-convex_url = "https://different-alpaca-219.convex.cloud"
-http_actions_url = "https://different-alpaca-219.convex.site"
+convex_url = "https://tidy-newt-65.convex.cloud"
+http_actions_url = "https://tidy-newt-65.convex.site"
 
 # Team registration secret. Ask the other team member privately; never commit it.
 # registration_secret = "paste-here"

@@ -13,7 +13,7 @@ Findings from Week 1 spikes (`Roadmap.md`). Owner: **[A]** Aditya · **[T]** Tir
 
 ## S4 — Agent pushes to Convex every 1 s; measure RAM [A] · done 3 Nov 2026
 
-Convex deployment: `different-alpaca-219` (cloud `https://different-alpaca-219.convex.cloud`).
+Convex deployment: prod `tidy-newt-65` (cloud `https://tidy-newt-65.convex.cloud`).
 
 **Client API** (verified against the official docs before coding):
 - Crate `convex` 0.10.4. Source: https://docs.convex.dev/client/rust and https://docs.rs/convex/0.10.4.
@@ -36,7 +36,7 @@ Convex deployment: `different-alpaca-219` (cloud `https://different-alpaca-219.c
 - **Auth (added after first run):** the agent generates a 256-bit device secret on first run (saved in `config.toml`, gitignored) and sends only its SHA-256 hash (`Flow.md` §3). Backend `agent:register` / `agent:pushLatest` look the device up by hash; unknown hashes are rejected (`unknown device`, verified). Tables are the subset from `Database.md`: `devices`, `latest`.
 - **Registration now needs a team secret** (`AGENT_REGISTRATION_SECRET`, Convex env var; each PC keeps it in `config.toml`). Wrong secret → `not authorized` (verified). `getLatest` was removed: there is no public read endpoint until pairing (week 2). Pairing will link devices to users (`Flow.md` §3).
 - **Test data:** spike rows and the earlier test device were deleted from dev. `config.toml` permissions are not restricted yet (`Security.md` §6).
-- **Deployment:** the backend is live on the **dev** deployment (`different-alpaca-219`). The production deployment (`tidy-newt-65`) is still to be updated; the agent config points at dev until that deploy is approved.
+- **Deployment:** the backend is live on **prod** (`tidy-newt-65`, `https://tidy-newt-65.convex.cloud`), deployed 3 Nov 2026. The agent config points at prod. Dev (`different-alpaca-219`) stays for local `convex dev` work.
 - Measured RAM is for a release build. Re-measure after the real collectors land.
 
 ---

@@ -92,10 +92,10 @@ mod tests {
     fn parses_example_config() {
         let text = include_str!("../config.example.toml");
         let cfg = Config::from_toml(text).expect("example config must parse");
-        assert_eq!(cfg.convex_url, "https://different-alpaca-219.convex.cloud");
+        assert_eq!(cfg.convex_url, "https://tidy-newt-65.convex.cloud");
         assert_eq!(
             cfg.http_actions_url,
-            "https://different-alpaca-219.convex.site"
+            "https://tidy-newt-65.convex.site"
         );
         assert_eq!(cfg.summary_interval_secs, 60);
         assert_eq!(cfg.live_interval_secs, 1);
