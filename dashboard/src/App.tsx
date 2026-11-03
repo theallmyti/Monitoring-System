@@ -4,6 +4,7 @@ import { anyApi } from "convex/server";
 import { Device, Overview, RANGES, Range } from "./types";
 import { DeviceSection, CPU_TEMP_LIMIT, GPU_TEMP_LIMIT, RAM_LIMIT } from "./DeviceSection";
 import { Kpi } from "./Kpi";
+import { Backdrop } from "./Backdrop";
 
 // Owner-only read token. Kept in this browser's localStorage (per-viewer convenience).
 const TOKEN_KEY = "pcm-read-token";
@@ -92,6 +93,7 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
 
   return (
     <>
+      <Backdrop />
       <header className="topbar">
         <div className="topbar-inner">
         <div>

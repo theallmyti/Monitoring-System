@@ -41,6 +41,10 @@ button, input { font: inherit; color: inherit; }
 .empty { font-family: var(--at-serif); font-size: 16px; line-height: 1.88; color: var(--at-mist); padding: 24px 0; }
 .italic { font-family: var(--at-serif); font-size: 16px; line-height: 1.88; color: var(--at-mist); }
 
+/* 3D backdrop: fixed behind everything; the content layer sits above it. */
+.backdrop { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; pointer-events: none; opacity: 0.6; }
+.topbar, .page { position: relative; z-index: 1; }
+
 /* Floating ghost bar: title and controls sit top-left and top-right, nearly invisible. */
 .topbar { padding: 24px 0 0; }
 .topbar-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px 24px; }
