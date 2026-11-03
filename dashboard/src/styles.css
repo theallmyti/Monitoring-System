@@ -258,6 +258,18 @@ input:focus { outline: none; border-bottom: 2px solid var(--fl-accent); }
 .login label { display: grid; gap: 6px; color: var(--fl-text-muted); font-size: 12px; }
 .login .action { justify-self: start; }
 
+/* Pairing */
+.scanner { position: relative; border-radius: var(--fl-radius-lg); overflow: hidden; background: #000; aspect-ratio: 1; }
+.scanner video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scanner p { position: absolute; inset: auto 0 12px; text-align: center; color: #fff; }
+.code-form { display: grid; gap: 12px; }
+.code-form label { display: grid; gap: 6px; color: var(--fl-text-muted); font-size: 12px; }
+.code-form input { font-size: 20px; letter-spacing: 0.15em; text-transform: uppercase; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.err { color: var(--fl-critical); }
+.small { font-size: 12px; }
+.action:disabled { opacity: 0.6; cursor: default; }
+
 /* Motion: Fluent durations are short; reduced motion switches transitions off. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

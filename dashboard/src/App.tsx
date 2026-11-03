@@ -4,6 +4,7 @@ import { anyApi } from "convex/server";
 import { Device, Overview, RANGES, Range } from "./types";
 import { DeviceSection, CPU_TEMP_LIMIT, GPU_TEMP_LIMIT, RAM_LIMIT } from "./DeviceSection";
 import { Kpi } from "./Kpi";
+import { PairScreen } from "./PairScreen";
 
 // Owner-only read token. Kept in this browser's localStorage (per-viewer convenience).
 const TOKEN_KEY = "pcm-read-token";
@@ -70,6 +71,10 @@ function TokenScreen({ onSave }: { onSave: (t: string) => void }) {
 
 function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void }) {
   const [range, setRange] = useState<Range>(RANGES[0]);
+  // null: dashboard. "": pairing scanner. "ABC123": pairing with that code (from ?pair=).
+  const [pairing, setPairing] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get("pair"),
+  );
   const data = useQuery(anyApi.dashboard.overview, { token }) as Overview | undefined;
   const setViewer = useMutation(anyApi.dashboard.setViewer);
   const deviceIds = (data?.devices ?? []).map((d) => d.id).join(",");
@@ -90,6 +95,10 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
       document.removeEventListener("visibilitychange", beat);
     };
   }, [deviceIds, token, setViewer]);
+
+  if (pairing !== null) {
+    return <PairScreen token={token} initialCode={pairing || undefined} onDone={() => setPairing(null)} />;
+  }
 
   if (data === undefined) {
     return (
@@ -131,6 +140,7 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
               </button>
             ))}
           </div>
+          <button type="button" className="action" onClick={() => setPairing("")}>Pair device</button>
           <button type="button" className="link" onClick={onSignOut}>Sign out</button>
         </div>
         </div>

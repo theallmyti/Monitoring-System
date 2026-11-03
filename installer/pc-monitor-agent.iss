@@ -5,6 +5,7 @@
 ; - Asks for admin (UAC) like any installer, installs to Program Files
 ; - Optional: installs the official PawnIO driver for CPU temperature (full mode, F8)
 ; - Writes %ProgramData%\PCMonitor\config.toml (SYSTEM + Administrators only, docs/Security.md §6)
+; - Pairing: opens a window with a QR code; the owner scans it on the site/app (docs/Flow.md §3)
 ; - Creates the "PCMonitorAgent" Windows service, restarted after a crash (NFR-06)
 
 #define AppName "PC Monitor Agent"
@@ -58,9 +59,6 @@ Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden 
 Type: filesandordirs; Name: "{commonappdata}\PCMonitor"
 
 [Code]
-var
-  SecretPage: TInputQueryWizardPage;
-
 function DataDir(): String;
 begin
   Result := ExpandConstant('{commonappdata}\PCMonitor');
@@ -91,31 +89,6 @@ begin
   Log('sc.exe ' + Params + ' -> ' + IntToStr(Code));
 end;
 
-procedure InitializeWizard();
-begin
-  SecretPage := CreateInputQueryPage(wpSelectTasks,
-    'Connect to PC Monitor',
-    'Enter the team registration secret.',
-    'Ask the project owner for the registration secret. It is stored only on this computer, readable by administrators.');
-  SecretPage.Add('Registration secret:', True);
-end;
-
-// An upgrade keeps the existing config, so the secret is not asked again.
-function ShouldSkipPage(PageID: Integer): Boolean;
-begin
-  Result := (PageID = SecretPage.ID) and ConfigExists();
-end;
-
-function NextButtonClick(CurPageID: Integer): Boolean;
-begin
-  Result := True;
-  if (CurPageID = SecretPage.ID) and (Trim(SecretPage.Values[0]) = '') then
-  begin
-    MsgBox('Enter the registration secret to continue.', mbError, MB_OK);
-    Result := False;
-  end;
-end;
-
 // Stop a running agent before its files are replaced (upgrade).
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
@@ -124,22 +97,30 @@ begin
   Result := '';
 end;
 
+// The agent adds its device secret on first run. An upgrade keeps the existing file.
 procedure WriteConfig();
-var
-  Secret: String;
 begin
   ForceDirectories(DataDir());
   if not ConfigExists() then
-  begin
-    Secret := Trim(SecretPage.Values[0]);
-    StringChangeEx(Secret, '\', '\\', True);
-    StringChangeEx(Secret, '"', '\"', True);
     SaveStringToFile(DataDir() + '\config.toml',
       '# PC Monitor agent config, written by the installer.' + #13#10 +
       'convex_url = "{#ConvexUrl}"' + #13#10 +
-      'live_interval_secs = 1' + #13#10 +
-      'registration_secret = "' + Secret + '"' + #13#10, False);
-  end;
+      'live_interval_secs = 1' + #13#10, False);
+end;
+
+// Shows the QR code in a window and waits until the owner confirms it (exit 0), the code
+// expires (2), or there is no connection (1). Already paired: returns at once.
+procedure Pair();
+var
+  Code: Integer;
+begin
+  WizardForm.StatusLabel.Caption := 'Pairing: scan the QR code in the PC Monitor window...';
+  Exec(ExpandConstant('{app}\pc-monitor-agent.exe'), 'pair "' + DataDir() + '\config.toml"',
+    ExpandConstant('{app}'), SW_SHOWNORMAL, ewWaitUntilTerminated, Code);
+  Log('pair -> ' + IntToStr(Code));
+  if Code <> 0 then
+    MsgBox('This computer is not paired yet. The agent is installed and will start sending data ' +
+      'as soon as it is paired. To get a new code, run this setup again.', mbInformation, MB_OK);
 end;
 
 // SYSTEM and Administrators only (docs/Security.md §6): the file holds the device secret.
@@ -171,6 +152,7 @@ begin
   begin
     WriteConfig();
     LockDataDir();
+    Pair();
     InstallService();
   end;
 end;

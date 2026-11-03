@@ -4,8 +4,11 @@ Builds `dist\pc-monitor-agent-setup-<version>.exe`, a normal Windows setup progr
 
 ## What it does
 - Asks for admin (UAC), installs to `C:\Program Files\PC Monitor`.
-- Asks for the team registration secret (until pairing exists) and writes
-  `C:\ProgramData\PCMonitor\config.toml`, readable only by SYSTEM and Administrators.
+- Writes `C:\ProgramData\PCMonitor\config.toml`, readable only by SYSTEM and Administrators.
+- **Pairing:** opens a window with a QR code and a 6-character code. Open the site on your
+  phone, tap **Pair device**, scan the code (or type it), and confirm. The window closes and
+  setup continues. If the code expires, the agent is still installed and starts sending data
+  once paired; run the setup again to get a new code.
 - Optional, on by default: **Show CPU temperature**. Installs the official signed PawnIO
   driver (`PawnIO_setup.exe -install -silent`) and the signed AMD/Intel modules. Without it the
   agent runs in no-driver mode (no CPU temperature).
