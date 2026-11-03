@@ -6,8 +6,10 @@
 ; - Locks the install folder to SYSTEM + Administrators (the service runs as LocalSystem)
 ; - Optional: installs the official PawnIO driver for CPU temperature (full mode, F8)
 ; - Writes %ProgramData%\PCMonitor\config.toml (SYSTEM + Administrators only, docs/Security.md §6)
-; - Pairing: opens a window with a QR code; the owner scans it on the site/app (docs/Flow.md §3)
-; - Creates the "PCMonitorAgent" Windows service, restarted after a crash (NFR-06)
+; - "Pair this computer" page: QR code image, code, countdown; the owner scans it on the site/app
+;   (docs/Flow.md §3). A new code appears automatically when one expires.
+; - Creates the "PCMonitorAgent" Windows service (restarted after a crash, NFR-06) and starts it
+;   once pairing is done or skipped
 ; Uninstall: stops and deletes the service, removes the device and its history from PC Monitor,
 ; removes PawnIO (silently if this installer added it, otherwise after asking), deletes all files.
 
@@ -57,13 +59,18 @@ Source: "vendor\pawnio\PawnIO_setup.exe"; DestDir: "{tmp}"; Tasks: cputemp; Flag
 Name: "{group}\Uninstall PC Monitor Agent"; Filename: "{uninstallexe}"
 
 [UninstallDelete]
-; Config (with the device secret) and logs.
+; Config (with the device secret), logs and pairing files.
 Type: filesandordirs; Name: "{commonappdata}\PCMonitor"
 
 [Code]
 function DataDir(): String;
 begin
   Result := ExpandConstant('{commonappdata}\PCMonitor');
+end;
+
+function PairDir(): String;
+begin
+  Result := DataDir() + '\pair';
 end;
 
 function ConfigExists(): Boolean;
@@ -140,22 +147,8 @@ begin
     RegWriteDWordValue(HKLM, '{#StateKey}', 'InstalledPawnIO', 1);
 end;
 
-// Shows the QR code in a window and waits until the owner confirms it (exit 0), the code
-// expires (2), or there is no connection (1). Already paired: returns at once.
-procedure Pair();
-var
-  Code: Integer;
-begin
-  WizardForm.StatusLabel.Caption := 'Pairing: scan the QR code in the PC Monitor window...';
-  Exec(ExpandConstant('{app}\pc-monitor-agent.exe'), 'pair "' + DataDir() + '\config.toml"',
-    ExpandConstant('{app}'), SW_SHOWNORMAL, ewWaitUntilTerminated, Code);
-  Log('pair -> ' + IntToStr(Code));
-  if Code <> 0 then
-    MsgBox('This computer is not paired yet. The agent is installed and will start sending data ' +
-      'as soon as it is paired. To get a new code, run this setup again.', mbInformation, MB_OK);
-end;
-
-procedure InstallService();
+// Created here, started after the pairing page so the agent starts as a paired device.
+procedure CreateService();
 begin
   if not ServiceExists() then
   begin
@@ -164,7 +157,6 @@ begin
     // Restart after a crash: 5 s, 5 s, then 60 s; reset the count after a day (NFR-06).
     Sc('failure {#ServiceName} reset= 86400 actions= restart/5000/restart/5000/restart/60000');
   end;
-  Sc('start {#ServiceName}');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -175,9 +167,43 @@ begin
     WriteConfig();
     LockDir(DataDir(), False);
     InstallPawnIO();
-    Pair();
-    InstallService();
+    CreateService();
+    // Silent installs skip the pairing page: start now; the agent waits until it is paired.
+    if WizardSilent() then
+      Sc('start {#ServiceName}');
   end;
+end;
+
+// --- Pairing page (installer/pairing-page.iss) ------------------------------------------------
+
+#include "pairing-page.iss"
+
+procedure InitializeWizard();
+begin
+  CreatePairingPage(wpInstalling);
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = PairPage.ID then
+    StartPairing(ExpandConstant('{app}\pc-monitor-agent.exe'), PairDir(), DataDir() + '\config.toml');
+end;
+
+// Next (paired) or Skip: start the service either way; an unpaired agent waits until paired.
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = PairPage.ID then
+  begin
+    Result := FinishPairingPage();
+    if Result then
+      Sc('start {#ServiceName}');
+  end;
+end;
+
+procedure DeinitializeSetup();
+begin
+  StopPairing();
 end;
 
 // --- Uninstall -------------------------------------------------------------------------------

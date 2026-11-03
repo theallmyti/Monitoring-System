@@ -317,17 +317,22 @@ fn main() {
             return;
         }
         // Show a QR code and wait for the owner to confirm (run by the installer).
+        // `pair [--ui <dir>] [config]`: --ui writes the QR image and status for the setup window.
         Some("pair") => {
-            let path = PathBuf::from(
-                std::env::args()
-                    .nth(2)
-                    .unwrap_or_else(|| "config.toml".to_string()),
-            );
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            let (ui, config_arg) = match rest.first().map(String::as_str) {
+                Some("--ui") => (
+                    pair::Ui::Files(PathBuf::from(rest.get(1).cloned().unwrap_or_default())),
+                    rest.get(2).cloned(),
+                ),
+                _ => (pair::Ui::Terminal, rest.first().cloned()),
+            };
+            let path = PathBuf::from(config_arg.unwrap_or_else(|| "config.toml".to_string()));
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .expect("failed to start the async runtime")
-                .block_on(pair::run(&path));
+                .block_on(pair::run(&path, ui));
             return;
         }
         // Started by the Windows Service Control Manager (installed by the setup program).
@@ -443,7 +448,8 @@ pub async fn run(path: PathBuf, stop: Arc<Notify>) {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     let mut aggregator = Aggregator::default();
-    let mut next_summary = Instant::now() + SUMMARY_EVERY;
+    // First summary after 10 s, so a newly paired computer shows data at once; then every 60 s.
+    let mut next_summary = Instant::now() + Duration::from_secs(10);
     let mut was_live = false;
     let mut tick: u64 = 0;
     let mut ticker = tokio::time::interval(Duration::from_secs(config.live_interval_secs));
