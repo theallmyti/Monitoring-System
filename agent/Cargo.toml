@@ -1,0 +1,9 @@
+[package]
+name = "pc-monitor-agent"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+sysinfo = "0.40.1"
+toml = "1.1.8"

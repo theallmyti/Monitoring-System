@@ -1,0 +1,12 @@
+﻿# PC Monitor agent config.
+# Copy to config.toml (gitignored) and fill in device_secret after `agent pair` (not yet built).
+
+# Convex cloud endpoints for the team deployment (not secret).
+convex_url = "https://different-alpaca-219.convex.cloud"
+http_actions_url = "https://different-alpaca-219.convex.site"
+
+# Seconds between summaries (docs/SRS.md FR-30).
+summary_interval_secs = 60
+
+# Seconds between live pushes while a viewer is present (FR-31).
+live_interval_secs = 1

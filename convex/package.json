@@ -1,0 +1,15 @@
+{
+  "name": "pc-monitor-convex",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "convex": "^1.49.0",
+    "typescript": "^7.0.2"
+  }
+}

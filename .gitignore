@@ -1,0 +1,22 @@
+﻿# Build output
+agent/target/
+convex/node_modules/
+android/build/
+android/.gradle/
+android/.idea/
+*.apk
+*.aab
+
+# Secrets (see docs/Security.md section 10)
+.env*
+*.keystore
+*.jks
+google-services.json
+agent/dev.toml
+agent/config.toml
+*.secret
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
