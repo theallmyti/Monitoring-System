@@ -25,3 +25,5 @@ Thumbs.db
 .vscode/
 agent/agent.log
 agent/agent.log.err
+installer/vendor/
+dist/

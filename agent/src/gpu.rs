@@ -134,7 +134,7 @@ impl GpuReader {
         let mut cmd = helper_command(exe);
         cmd.arg("1000");
         let Ok(mut child) = cmd.spawn() else {
-            eprintln!("gpu helper failed to start");
+            warn!("gpu helper failed to start");
             return;
         };
         let latest = Arc::new(Mutex::new(None));

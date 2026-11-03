@@ -3,15 +3,20 @@
 //! Convex client: https://docs.rs/convex/0.10.4 (clone shares the connection; the client
 //! reconnects by itself with backoff, so only the first connection is retried here).
 
+#[macro_use]
+mod logging;
 mod aggregator;
 mod battery;
 mod collectors;
 mod config;
+mod cputemp;
 mod dashboard;
 mod gpu;
+#[cfg(windows)]
+mod service;
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -22,6 +27,7 @@ use collectors::{Drive, Proc};
 use convex::{ConvexClient, FunctionResult, Value};
 use futures::StreamExt;
 use sysinfo::{Components, CpuRefreshKind, Disks, MemoryRefreshKind, RefreshKind, System};
+use tokio::sync::Notify;
 
 /// FR-30: one summary per minute, always.
 const SUMMARY_EVERY: Duration = Duration::from_secs(60);
@@ -52,8 +58,8 @@ fn print_sensors() {
     let components = Components::new_with_refreshed_list().expect("failed to read sensors");
     for c in &components {
         match c.temperature() {
-            Some(t) => println!("{:<40} {t:.1} °C", c.label()),
-            None => println!("{:<40} n/a", c.label()),
+            Some(t) => say!("{:<40} {t:.1} °C", c.label()),
+            None => say!("{:<40} n/a", c.label()),
         }
     }
 }
@@ -149,6 +155,7 @@ fn procs_value(procs: &[Proc]) -> Value {
 fn capabilities_value(
     has_gpu: bool,
     has_battery: bool,
+    full_mode: bool,
     components: &Components,
     drives: &[Drive],
 ) -> Value {
@@ -160,7 +167,8 @@ fn capabilities_value(
         Value::Boolean(collectors::has_per_core_temps(components)),
     );
     if cfg!(windows) {
-        o.insert("windowsMode".to_string(), text("noDriver"));
+        let mode = if full_mode { "full" } else { "noDriver" };
+        o.insert("windowsMode".to_string(), text(mode));
     }
     o.insert(
         "isPi".to_string(),
@@ -215,19 +223,19 @@ async fn push(client: &mut ConvexClient, name: &str, args: BTreeMap<String, Valu
     match tokio::time::timeout(PUSH_TIMEOUT, client.mutation(name, args)).await {
         Ok(Ok(FunctionResult::Value(_))) => true,
         Ok(Ok(FunctionResult::ErrorMessage(msg))) => {
-            eprintln!("{name}: {msg}");
+            warn!("{name}: {msg}");
             false
         }
         Ok(Ok(FunctionResult::ConvexError(err))) => {
-            eprintln!("{name}: {err:?}");
+            warn!("{name}: {err:?}");
             false
         }
         Ok(Err(e)) => {
-            eprintln!("{name} failed: {e}");
+            warn!("{name} failed: {e}");
             false
         }
         Err(_) => {
-            eprintln!(
+            warn!(
                 "{name}: no answer within {}s (offline?)",
                 PUSH_TIMEOUT.as_secs()
             );
@@ -243,7 +251,7 @@ async fn connect(url: &str) -> ConvexClient {
         match ConvexClient::new(url).await {
             Ok(c) => return c,
             Err(e) => {
-                eprintln!(
+                warn!(
                     "cannot connect to Convex: {e}; retrying in {}s",
                     delay.as_secs()
                 );
@@ -270,42 +278,65 @@ fn watch_viewer(mut client: ConvexClient, secret_hash: String, viewer_until: Arc
                             FunctionResult::Value(Value::Int64(t)) => {
                                 viewer_until.store(t.max(0) as u64, Ordering::Relaxed)
                             }
-                            other => eprintln!("agent:watchViewer: {other:?}"),
+                            other => warn!("agent:watchViewer: {other:?}"),
                         }
                     }
                 }
-                Err(e) => eprintln!("agent:watchViewer failed: {e}"),
+                Err(e) => warn!("agent:watchViewer failed: {e}"),
             }
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
     });
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    // Helper mode: read the GPU in a separate process (see gpu.rs).
-    if std::env::args().nth(1).as_deref() == Some("gpu") {
-        let every_ms = std::env::args().nth(2).and_then(|v| v.parse().ok());
-        exit(gpu::run_helper(every_ms));
+fn main() {
+    let first = std::env::args().nth(1);
+    match first.as_deref() {
+        // Helper mode: read the GPU in a separate process (see gpu.rs).
+        Some("gpu") => {
+            let every_ms = std::env::args().nth(2).and_then(|v| v.parse().ok());
+            exit(gpu::run_helper(every_ms));
+        }
+        Some("sensors") => {
+            print_sensors();
+            return;
+        }
+        // Started by the Windows Service Control Manager (installed by the setup program).
+        #[cfg(windows)]
+        Some("service") => {
+            if let Err(e) = service::start() {
+                warn!("run as a service only: {e}");
+                exit(1);
+            }
+            return;
+        }
+        _ => {}
     }
-    if std::env::args().nth(1).as_deref() == Some("sensors") {
-        print_sensors();
-        return;
-    }
-    let path = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "config.toml".to_string());
-    let mut config = match config::Config::load(Path::new(&path)) {
+    let path = PathBuf::from(first.unwrap_or_else(|| "config.toml".to_string()));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("failed to start the async runtime");
+    // Runs until the process is stopped; the service passes a real stop signal instead.
+    runtime.block_on(run(path, Arc::new(Notify::new())));
+}
+
+/// The agent: load config, register, then sample / summary / live loop until `stop` fires.
+pub async fn run(path: PathBuf, stop: Arc<Notify>) {
+    let mut config = match config::Config::load(&path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{e} (expected at {path}; copy config.example.toml)");
+            warn!(
+                "{e} (expected at {}; copy config.example.toml)",
+                path.display()
+            );
             exit(1);
         }
     };
-    let secret = match config.ensure_device_secret(Path::new(&path)) {
+    let secret = match config.ensure_device_secret(&path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("{e}");
+            warn!("{e}");
             exit(1);
         }
     };
@@ -322,6 +353,8 @@ async fn main() {
     let mut gpu_reader = gpu::GpuReader::new().await;
     // Windows no-driver mode has no temperature sensors, and listing them goes through WMI,
     // which loads heavy system libraries. Keep an empty list there (Task 16, NFR-01).
+    // Windows full mode: CPU temperature through PawnIO (admin). Logs why when unavailable.
+    let cpu_temp_reader = cputemp::CpuTemp::open();
     let mut components = if cfg!(windows) {
         Components::new().expect("failed to create sensor list")
     } else {
@@ -334,7 +367,7 @@ async fn main() {
     let mut battery_now: Option<battery::BatteryStats> = None;
 
     let device_name = System::host_name().unwrap_or_else(|_| "unknown".to_string());
-    println!(
+    say!(
         "device={device_name} convex={} gpu={} drives={}",
         config.convex_url,
         if gpu_reader.present() {
@@ -348,9 +381,7 @@ async fn main() {
 
     // Register (or refresh) this device. Pairing replaces this in Task 7.
     let Some(registration_secret) = config.registration_secret.clone() else {
-        eprintln!(
-            "registration_secret missing from config.toml (get it from the other team member)"
-        );
+        warn!("registration_secret missing from config.toml (get it from the other team member)");
         exit(1);
     };
     let mut reg_args = BTreeMap::new();
@@ -362,6 +393,7 @@ async fn main() {
         capabilities_value(
             gpu_reader.present(),
             battery_reader.is_some(),
+            cpu_temp_reader.available(),
             &components,
             &drives,
         ),
@@ -370,7 +402,7 @@ async fn main() {
     if !push(&mut client, "agent:register", reg_args).await {
         exit(1);
     }
-    println!("registered");
+    say!("registered");
 
     let viewer_until = Arc::new(AtomicU64::new(0));
     watch_viewer(client.clone(), secret_hash.clone(), viewer_until.clone());
@@ -390,7 +422,13 @@ async fn main() {
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        ticker.tick().await;
+        tokio::select! {
+            _ = ticker.tick() => {}
+            _ = stop.notified() => {
+                say!("stopping");
+                return;
+            }
+        }
         tick += 1;
         sys.refresh_cpu_usage();
         sys.refresh_memory();
@@ -404,7 +442,7 @@ async fn main() {
         {
             match dashboard::docker_summary(url) {
                 Ok(d) => docker = Some(d),
-                Err(e) => eprintln!("dashboard read failed: {e}"),
+                Err(e) => warn!("dashboard read failed: {e}"),
             }
         }
 
@@ -421,7 +459,8 @@ async fn main() {
 
         let cpu_util = sys.global_cpu_usage() as f64;
         let ram_pct = sys.used_memory() as f64 / sys.total_memory() as f64 * 100.0;
-        let cpu_t = cpu_temp(&components);
+        // Full mode (PawnIO, admin) first; otherwise the OS sensors (Linux hwmon).
+        let cpu_t = cpu_temp_reader.read().or_else(|| cpu_temp(&components));
         // GPU: every second while live; every 30 s otherwise, without keeping NVML loaded.
         let gpu = gpu_reader.read(live).await;
         aggregator.push(Sample {
@@ -436,7 +475,7 @@ async fn main() {
         let summary_due = Instant::now() >= next_summary;
 
         if live != was_live {
-            println!(
+            say!(
                 "{}",
                 if live {
                     "viewer present: live on"
@@ -533,9 +572,11 @@ async fn main() {
                 )
                 .await
                 {
-                    println!(
+                    say!(
                         "summary cpu avg {:.1}% max {:.1}% ram avg {:.1}%",
-                        s.cpu_util_avg, s.cpu_util_max, s.ram_pct_avg
+                        s.cpu_util_avg,
+                        s.cpu_util_max,
+                        s.ram_pct_avg
                     );
                 }
             }
