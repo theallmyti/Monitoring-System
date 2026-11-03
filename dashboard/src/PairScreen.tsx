@@ -93,7 +93,7 @@ export function PairScreen({ token, initialCode, onDone }: { token: string; init
       <div className="login">
         <h1>Pair device</h1>
         <p className="muted">Point the camera at the QR code shown on the computer.</p>
-        <Scanner onCode={(c) => setCode(normalize(c))} />
+        <Scanner accept={(t) => t.startsWith(QR_PREFIX)} onCode={(c) => setCode(normalize(c))} />
         <form
           className="code-form"
           onSubmit={(e) => {
@@ -124,11 +124,14 @@ export function PairScreen({ token, initialCode, onDone }: { token: string; init
 }
 
 // Camera QR scanner: reads frames into a canvas and decodes them with jsQR.
-function Scanner({ onCode }: { onCode: (code: string) => void }) {
+// `accept` decides which QR texts count (pairing codes, unlock links); others are ignored.
+export function Scanner({ onCode, accept }: { onCode: (text: string) => void; accept: (text: string) => boolean }) {
   const video = useRef<HTMLVideoElement>(null);
   // Latest callback without restarting the camera on every parent render.
   const onCodeRef = useRef(onCode);
   onCodeRef.current = onCode;
+  const acceptRef = useRef(accept);
+  acceptRef.current = accept;
   const [status, setStatus] = useState<"starting" | "scanning" | "unavailable">("starting");
 
   useEffect(() => {
@@ -148,7 +151,7 @@ function Scanner({ onCode }: { onCode: (code: string) => void }) {
         const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
         // The computer draws the QR light-on-dark, so try inverted images too.
         const found = jsQR(img.data, img.width, img.height, { inversionAttempts: "attemptBoth" });
-        if (found && found.data.startsWith(QR_PREFIX)) {
+        if (found && acceptRef.current(found.data)) {
           onCodeRef.current(found.data);
           return;
         }

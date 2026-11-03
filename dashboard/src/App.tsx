@@ -4,7 +4,7 @@ import { anyApi } from "convex/server";
 import { Device, Overview, RANGES, Range } from "./types";
 import { DeviceSection, CPU_TEMP_LIMIT, GPU_TEMP_LIMIT, RAM_LIMIT } from "./DeviceSection";
 import { Kpi } from "./Kpi";
-import { PairScreen } from "./PairScreen";
+import { PairScreen, Scanner } from "./PairScreen";
 
 // Owner-only read token. Kept in this browser's localStorage (per-viewer convenience).
 const TOKEN_KEY = "pcm-read-token";
@@ -59,23 +59,41 @@ export default function App() {
   );
 }
 
+// Accepts the unlock QR (a link with #token=...) or the bare token.
+function tokenFrom(text: string): string | null {
+  const t = text.trim();
+  return t.match(/token=([0-9a-f]{16,})/i)?.[1] ?? (/^[0-9a-f]{16,}$/i.test(t) ? t : null);
+}
+
 function TokenScreen({ onSave }: { onSave: (t: string) => void }) {
   const [value, setValue] = useState("");
+  const [scanning, setScanning] = useState(false);
   return (
     <main className="center">
       <form
         className="login"
         onSubmit={(e) => {
           e.preventDefault();
-          if (value.trim()) onSave(value.trim());
+          if (value.trim()) onSave(tokenFrom(value) ?? value.trim());
         }}
       >
         <h1>PC Monitor</h1>
-        <label>
-          Dashboard read token
-          <input type="password" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} />
-        </label>
-        <button type="submit" className="action">Open dashboard</button>
+        {scanning ? (
+          <>
+            <p className="muted">Point the camera at the unlock QR code on your computer.</p>
+            <Scanner accept={(t) => tokenFrom(t) !== null} onCode={(t) => onSave(tokenFrom(t)!)} />
+            <button type="button" className="link" onClick={() => setScanning(false)}>Cancel</button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="action" onClick={() => setScanning(true)}>Scan unlock QR</button>
+            <label>
+              Or paste the dashboard read token
+              <input type="password" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} />
+            </label>
+            <button type="submit" className="link">Open dashboard</button>
+          </>
+        )}
       </form>
     </main>
   );
