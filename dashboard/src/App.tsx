@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import { anyApi } from "convex/server";
-import { Device, Overview } from "./types";
-import { DeviceCard } from "./DeviceCard";
+import { Device, Overview, RANGES, Range } from "./types";
+import { DeviceSection, CPU_TEMP_LIMIT, GPU_TEMP_LIMIT, RAM_LIMIT } from "./DeviceSection";
+import { Kpi } from "./Kpi";
 
 // Owner-only read token. Kept in this browser's localStorage (per-viewer convenience).
 const TOKEN_KEY = "pcm-read-token";
@@ -68,6 +69,7 @@ function TokenScreen({ onSave }: { onSave: (t: string) => void }) {
 }
 
 function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void }) {
+  const [range, setRange] = useState<Range>(RANGES[0]);
   const data = useQuery(anyApi.dashboard.overview, { token }) as Overview | undefined;
 
   if (data === undefined) {
@@ -78,32 +80,94 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
     );
   }
 
-  const online = data.devices.filter((d: Device) => d.online).length;
+  const devices = data.devices;
+  const online = devices.filter((d) => d.online).length;
+  // Fleet tiles use live devices only; an offline device's last readings are stale.
+  const withLatest = devices.filter((d) => d.latest && d.online);
+  const hottestCpu = pickMax(withLatest, (d) => d.latest?.cpu.packageTemp);
+  const highestRam = pickMax(withLatest, (d) => d.latest?.ram.usedPct);
+  const hottestGpu = pickMax(withLatest, (d) => d.latest?.gpu?.temp);
+  const errored = withLatest.reduce((n, d) => n + (d.latest?.pi?.docker?.errored ?? 0), 0);
+  const running = withLatest.reduce((n, d) => n + (d.latest?.pi?.docker?.running ?? 0), 0);
 
   return (
     <main className="page">
-      <header>
-        <button type="button" className="link" onClick={onSignOut}>Sign out</button>
+      <header className="topbar">
+        <div>
+          <h1>PC Monitor</h1>
+          <p className="italic">Every machine you own, at a glance.</p>
+        </div>
+        <div className="topbar-actions">
+          <div className="segmented" role="group" aria-label="Time range">
+            {RANGES.map((r) => (
+              <button
+                key={r.label}
+                type="button"
+                aria-pressed={r.hours === range.hours}
+                className={r.hours === range.hours ? "on" : ""}
+                onClick={() => setRange(r)}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="link" onClick={onSignOut}>Sign out</button>
+        </div>
       </header>
 
-      <div className="masthead">
-        <h1>PC Monitor</h1>
-        <p className="italic">Every machine you own, at a glance.</p>
-      </div>
-      <hr className="rule" />
-      <p className="lede">
-        {data.devices.length === 0
-          ? "No devices have reported yet."
-          : `${online} of ${data.devices.length} ${data.devices.length === 1 ? "device" : "devices"} online. Readings update as each agent reports.`}
-      </p>
+      {devices.length === 0 ? (
+        <p className="empty">No devices have reported yet.</p>
+      ) : (
+        <>
+          <section className="fleet" aria-label="Fleet summary">
+            <Kpi label="Devices online" value={`${online} of ${devices.length}`} hot={online < devices.length} />
+            <Kpi
+              label="Hottest CPU"
+              value={hottestCpu ? hottestCpu.value.toFixed(1) : "n/a"}
+              unit={hottestCpu ? "°C" : ""}
+              note={hottestCpu ? `${hottestCpu.name} · limit ${CPU_TEMP_LIMIT} °C` : "no CPU sensors"}
+              meter={hottestCpu ? (hottestCpu.value / CPU_TEMP_LIMIT) * 100 : undefined}
+              hot={hottestCpu ? hottestCpu.value >= CPU_TEMP_LIMIT : false}
+            />
+            <Kpi
+              label="Highest RAM"
+              value={highestRam ? Math.round(highestRam.value) : "n/a"}
+              unit={highestRam ? "%" : ""}
+              note={highestRam ? `${highestRam.name} · limit ${RAM_LIMIT} %` : undefined}
+              meter={highestRam?.value}
+              hot={highestRam ? highestRam.value >= RAM_LIMIT : false}
+            />
+            <Kpi
+              label="Hottest GPU"
+              value={hottestGpu ? Math.round(hottestGpu.value) : "n/a"}
+              unit={hottestGpu ? "°C" : ""}
+              note={hottestGpu ? `${hottestGpu.name} · limit ${GPU_TEMP_LIMIT} °C` : "no NVIDIA GPU"}
+              meter={hottestGpu ? (hottestGpu.value / GPU_TEMP_LIMIT) * 100 : undefined}
+              hot={hottestGpu ? hottestGpu.value >= GPU_TEMP_LIMIT : false}
+            />
+            <Kpi
+              label="Containers"
+              value={running + errored > 0 ? running : "n/a"}
+              unit={running + errored > 0 ? "running" : ""}
+              note={running + errored > 0 ? `${errored} errored` : "no Docker host"}
+              hot={errored > 0}
+            />
+          </section>
 
-      {data.devices.length > 0 && (
-        <div className="entries">
-          {data.devices.map((d: Device) => (
-            <DeviceCard key={d.id} device={d} />
+          {devices.map((d) => (
+            <DeviceSection key={d.id} device={d} token={token} range={range} />
           ))}
-        </div>
+        </>
       )}
     </main>
   );
+}
+
+function pickMax(devices: Device[], pick: (d: Device) => number | undefined) {
+  let best: { name: string; value: number } | null = null;
+  for (const d of devices) {
+    const v = pick(d);
+    if (v !== undefined && (best === null || v > best.value)) best = { name: d.name, value: v };
+  }
+  return best;
 }

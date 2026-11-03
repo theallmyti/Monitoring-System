@@ -35,3 +35,18 @@ export const overview = query({
     return { now, devices: out };
   },
 });
+
+// Per-minute history for one device since `sinceMs` (oldest first). Max ~1440 rows for 24 h.
+export const history = query({
+  args: { token: v.string(), deviceId: v.id("devices"), sinceMs: v.number() },
+  handler: async (ctx, args) => {
+    const expected = process.env.DASHBOARD_READ_TOKEN;
+    if (!expected || args.token !== expected) {
+      throw new ConvexError("not authorized");
+    }
+    return await ctx.db
+      .query("summaries")
+      .withIndex("by_device_time", (q) => q.eq("deviceId", args.deviceId).gte("minuteTs", args.sinceMs))
+      .collect();
+  },
+});

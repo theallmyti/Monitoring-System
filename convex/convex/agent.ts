@@ -94,5 +94,25 @@ export const pushLatest = mutation({
     } else {
       await ctx.db.insert("latest", row);
     }
+
+    // One history sample per minute (Architecture.md §2.2). Spike form: the first push of each minute.
+    const minuteTs = Math.floor(args.ts / 60000) * 60000;
+    const last = await ctx.db
+      .query("summaries")
+      .withIndex("by_device_time", (q) => q.eq("deviceId", device._id))
+      .order("desc")
+      .first();
+    if (!last || last.minuteTs < minuteTs) {
+      await ctx.db.insert("summaries", {
+        deviceId: device._id,
+        minuteTs,
+        cpuUtil: args.cpuUtil,
+        ramPct: args.ramUsedPct,
+        cpuTemp: args.cpuTemp,
+        gpuTemp: args.gpu?.temp,
+        gpuUtil: args.gpu?.util,
+        vramPct: args.gpu ? (args.gpu.vramUsed / args.gpu.vramTotal) * 100 : undefined,
+      });
+    }
   },
 });

@@ -36,4 +36,17 @@ export default defineSchema({
       }),
     ),
   }).index("by_device", ["deviceId"]),
+
+  // One sample per device per minute, for the history charts (docs/Database.md summaries).
+  // Spike form: a single sample, not avg/max. Week 2 replaces it with the real aggregator.
+  summaries: defineTable({
+    deviceId: v.id("devices"),
+    minuteTs: v.number(),
+    cpuUtil: v.number(),
+    ramPct: v.number(),
+    cpuTemp: v.optional(v.number()),
+    gpuTemp: v.optional(v.number()),
+    gpuUtil: v.optional(v.number()),
+    vramPct: v.optional(v.number()),
+  }).index("by_device_time", ["deviceId", "minuteTs"]),
 });
