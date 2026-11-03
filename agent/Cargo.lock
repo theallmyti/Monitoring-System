@@ -1089,6 +1089,7 @@ name = "pc-monitor-agent"
 version = "0.1.0"
 dependencies = [
  "convex",
+ "futures",
  "getrandom 0.3.4",
  "nvml-wrapper",
  "serde",
