@@ -315,7 +315,13 @@ async fn main() {
     .expect("failed to read system info");
     // No NVIDIA driver means no GPU stats; the rest of the agent keeps running (NFR-07).
     let nvml = gpu::init().ok();
-    let mut components = Components::new_with_refreshed_list().expect("failed to read sensors");
+    // Windows no-driver mode has no temperature sensors, and listing them goes through WMI,
+    // which loads heavy system libraries. Keep an empty list there (Task 16, NFR-01).
+    let mut components = if cfg!(windows) {
+        Components::new().expect("failed to create sensor list")
+    } else {
+        Components::new_with_refreshed_list().expect("failed to read sensors")
+    };
     let mut disks = Disks::new_with_refreshed_list().ok();
     let mut drives = disks.as_ref().map(collectors::drives).unwrap_or_default();
     // None on machines without a battery; then no battery data is sent.
@@ -379,7 +385,9 @@ async fn main() {
         tick += 1;
         sys.refresh_cpu_usage();
         sys.refresh_memory();
-        components.refresh(false);
+        if !cfg!(windows) {
+            components.refresh(false);
+        }
         if let Some(url) = config
             .dashboard_url
             .as_deref()
