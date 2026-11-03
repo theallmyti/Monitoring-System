@@ -1,4 +1,3 @@
-import { onReveal } from "./reveal";
 // KPI tile: label, large number, a thin meter, and a short note.
 export function Kpi({
   label,
@@ -16,12 +15,13 @@ export function Kpi({
   hot?: boolean;
 }) {
   return (
-    <div className={`kpi ${hot ? "kpi-hot" : ""}`} onPointerMove={onReveal}>
+    <div className={`kpi ${hot ? "kpi-hot" : ""}`}>
       <span className="kpi-label">{label}</span>
       <span className="kpi-value">
         {value}
         {unit && <span className="kpi-unit">{unit}</span>}
       </span>
+      {hot && <span className="tag">Over limit</span>}
       {meter !== undefined && (
         <div className="meter" role="img" aria-label={`${label} ${Math.round(meter)} percent of the scale`}>
           <div className="meter-fill" style={{ width: `${Math.max(0, Math.min(100, meter))}%` }} />

@@ -1,5 +1,4 @@
 import { KeyboardEvent, PointerEvent, useState } from "react";
-import { onReveal } from "./reveal";
 
 // Time-series line chart, hand-written SVG. One series, one y-axis (dataviz rules).
 // Colours come from CSS classes so they follow the Professional tokens.
@@ -35,7 +34,7 @@ export function LineChart({ title, unit, points, min, max, limit }: Props) {
 
   if (n < 2) {
     return (
-      <figure className="chart" onPointerMove={onReveal}>
+      <figure className="chart">
         <figcaption>{title}</figcaption>
         <p className="chart-empty">Collecting. One sample is stored per minute.</p>
       </figure>
@@ -78,7 +77,7 @@ export function LineChart({ title, unit, points, min, max, limit }: Props) {
   const h = hover !== null ? points[hover] : null;
 
   return (
-    <figure className="chart" onPointerMove={onReveal}>
+    <figure className="chart">
       <figcaption>
         <span>{title}</span>
         <span className="chart-now">
