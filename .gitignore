@@ -7,6 +7,9 @@ android/.idea/
 *.apk
 *.aab
 
+# Design docs (kept local, not in the repo)
+docs/
+
 # Secrets (see docs/Security.md section 10)
 .env*
 *.keystore
