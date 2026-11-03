@@ -15,7 +15,7 @@ export default defineSchema({
   latest: defineTable({
     deviceId: v.id("devices"),
     ts: v.number(),
-    cpu: v.object({ util: v.number() }),
+    cpu: v.object({ util: v.number(), packageTemp: v.optional(v.number()) }),
     ram: v.object({ usedPct: v.number() }),
     // Optional: only NVIDIA machines send it. Units: MB, W, MHz, %.
     gpu: v.optional(
@@ -27,6 +27,12 @@ export default defineSchema({
         powerW: v.number(),
         clock: v.number(),
         fanPct: v.optional(v.number()),
+      }),
+    ),
+    // Optional: Raspberry Pi containers. Counts come from the home-server dashboard.
+    pi: v.optional(
+      v.object({
+        docker: v.optional(v.object({ running: v.number(), stopped: v.number(), errored: v.number() })),
       }),
     ),
   }).index("by_device", ["deviceId"]),

@@ -47,6 +47,8 @@ export const pushLatest = mutation({
     ts: v.number(),
     cpuUtil: v.number(),
     ramUsedPct: v.number(),
+    cpuTemp: v.optional(v.number()),
+    docker: v.optional(v.object({ running: v.number(), stopped: v.number(), errored: v.number() })),
     gpu: v.optional(
       v.object({
         temp: v.number(),
@@ -64,6 +66,9 @@ export const pushLatest = mutation({
     if (args.cpuUtil < 0 || args.cpuUtil > 100 || args.ramUsedPct < 0 || args.ramUsedPct > 100) {
       throw new ConvexError("value out of range");
     }
+    if (args.cpuTemp !== undefined && (args.cpuTemp < 0 || args.cpuTemp > 125)) {
+      throw new ConvexError("cpu temp out of range");
+    }
     if (args.gpu && (args.gpu.temp < 0 || args.gpu.temp > 125 || args.gpu.util < 0 || args.gpu.util > 100)) {
       throw new ConvexError("gpu value out of range");
     }
@@ -75,9 +80,10 @@ export const pushLatest = mutation({
     const row = {
       deviceId: device._id,
       ts: args.ts,
-      cpu: { util: args.cpuUtil },
+      cpu: { util: args.cpuUtil, packageTemp: args.cpuTemp },
       ram: { usedPct: args.ramUsedPct },
       gpu: args.gpu,
+      pi: args.docker ? { docker: args.docker } : undefined,
     };
     const existing = await ctx.db
       .query("latest")

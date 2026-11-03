@@ -41,6 +41,13 @@ Convex deployment: prod `tidy-newt-65` (cloud `https://tidy-newt-65.convex.cloud
 
 ---
 
+## S2 — Pi temperatures and stats [A] · in progress 3 Nov 2026
+
+- The Pi 4 has **one** real temperature sensor (`cpu-thermal`, `/sys/class/thermal`). There are no per-core sensors, so per-core temperatures on the Pi are not measured.
+- The existing home-server dashboard (`/srv/docker/homepage`) shows per-core "temperatures" that are **estimates**: its collector adds a load-based offset to the package reading when only one sensor exists (`backend/collector.py`, lines 110–116). They are not measured values.
+- Plan: the agent runs in a Docker container on the Pi (`/srv/docker/pc-monitor-agent`). It reads `cpu-thermal` from `/sys` (read-only mount) and the container counts (running/stopped/errored) from the dashboard's `/api/system`. It pushes both with CPU and RAM to Convex. The Docker socket is not mounted.
+- Per-core temperatures on Linux still need the i3 server (coretemp). Tirth runs that test.
+
 ## S3 — NVIDIA GPU stats via NVML [A] · done 3 Nov 2026
 
 - Machine: ASUS TUF A15, RTX 3050 Laptop GPU (4 GB), driver 596.36.

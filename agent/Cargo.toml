@@ -8,7 +8,9 @@ convex = "0.10.4"
 getrandom = "0.3"
 nvml-wrapper = "0.13.0"
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 sha2 = "0.11.1"
 sysinfo = "0.40.1"
 tokio = { version = "1.54.1", default-features = false, features = ["rt", "macros", "time"] }
 toml = "1.1.8"
+ureq = { version = "3.5.1", features = ["json"] }

@@ -4,6 +4,7 @@
 //! (ConvexClient::new, ::mutation).
 
 mod config;
+mod dashboard;
 mod gpu;
 
 use std::collections::BTreeMap;
@@ -12,7 +13,32 @@ use std::process::exit;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use convex::{ConvexClient, FunctionResult, Value};
-use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+use sysinfo::{Components, CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+
+/// Hottest CPU sensor in Celsius. Raspberry Pi: cpu_thermal. Linux x86: coretemp/k10temp.
+fn cpu_temp(components: &Components) -> Option<f64> {
+    components
+        .iter()
+        .filter(|c| {
+            let l = c.label().to_lowercase();
+            l.contains("cpu") || l.contains("package") || l.contains("core")
+        })
+        .filter_map(|c| c.temperature())
+        .fold(None, |max: Option<f64>, t| {
+            Some(max.map_or(t as f64, |m| m.max(t as f64)))
+        })
+}
+
+/// S2 spike: print every temperature sensor the OS exposes (Linux hwmon), then exit.
+fn print_sensors() {
+    let components = Components::new_with_refreshed_list().expect("failed to read sensors");
+    for c in &components {
+        match c.temperature() {
+            Some(t) => println!("{:<40} {t:.1} °C", c.label()),
+            None => println!("{:<40} n/a", c.label()),
+        }
+    }
+}
 
 /// Convex `gpu` object (docs/Database.md `latest.gpu`). Optional fields are left out when absent.
 fn gpu_value(g: &gpu::GpuStats) -> Value {
@@ -37,6 +63,10 @@ fn gpu_value(g: &gpu::GpuStats) -> Value {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    if std::env::args().nth(1).as_deref() == Some("sensors") {
+        print_sensors();
+        return;
+    }
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "config.toml".to_string());
@@ -102,6 +132,10 @@ async fn main() {
 
     // No NVIDIA driver means no GPU stats; the rest of the agent keeps running (NFR-07).
     let nvml = gpu::init().ok();
+    let mut components = Components::new_with_refreshed_list().expect("failed to read sensors");
+    // Container counts are fetched every 10 s (summary changes slowly).
+    let mut docker: Option<dashboard::DockerSummary> = None;
+    let mut tick: u64 = 0;
     println!("gpu={}", if nvml.is_some() { "nvidia" } else { "none" });
 
     // CPU usage needs two samples separated by a short delay.
@@ -112,6 +146,14 @@ async fn main() {
         ticker.tick().await;
         sys.refresh_cpu_usage();
         sys.refresh_memory();
+        components.refresh(false);
+        tick += 1;
+        if let Some(url) = config.dashboard_url.as_deref().filter(|_| tick % 10 == 1) {
+            match dashboard::docker_summary(url) {
+                Ok(d) => docker = Some(d),
+                Err(e) => eprintln!("dashboard read failed: {e}"),
+            }
+        }
 
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -125,6 +167,16 @@ async fn main() {
         args.insert("ts".to_string(), Value::Float64(ts));
         args.insert("cpuUtil".to_string(), Value::Float64(cpu_util));
         args.insert("ramUsedPct".to_string(), Value::Float64(ram_pct));
+        if let Some(t) = cpu_temp(&components) {
+            args.insert("cpuTemp".to_string(), Value::Float64(t));
+        }
+        if let Some(d) = docker {
+            let mut o = BTreeMap::new();
+            o.insert("running".to_string(), Value::Float64(f64::from(d.running)));
+            o.insert("stopped".to_string(), Value::Float64(f64::from(d.stopped)));
+            o.insert("errored".to_string(), Value::Float64(f64::from(d.error)));
+            args.insert("docker".to_string(), Value::Object(o));
+        }
         let gpu_text = match nvml.as_ref().map(gpu::read) {
             Some(Ok(g)) => {
                 args.insert("gpu".to_string(), gpu_value(&g));

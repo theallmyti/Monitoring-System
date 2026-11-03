@@ -10,6 +10,9 @@ use std::path::Path;
 pub struct Config {
     pub convex_url: String,
     pub live_interval_secs: u64,
+    /// Home-server dashboard URL for container counts, e.g. http://localhost:8000/api/system (Pi only).
+    #[serde(default)]
+    pub dashboard_url: Option<String>,
     /// 256-bit device secret as hex. Generated on first run (docs/Security.md §6).
     #[serde(default)]
     pub device_secret: Option<String>,
