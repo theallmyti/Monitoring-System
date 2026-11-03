@@ -1,4 +1,4 @@
-﻿//! S4 spike, now against the backend: push CPU and RAM every `live_interval_secs`.
+//! S4 spike, now against the backend: push CPU and RAM every `live_interval_secs`.
 //! Learning goal: async Rust, the Convex Rust client, device-secret auth.
 //! Source: https://docs.convex.dev/client/rust and https://docs.rs/convex/0.10.4
 //! (ConvexClient::new, ::mutation).
@@ -45,8 +45,18 @@ async fn main() {
         }
     };
 
-    // Register (or refresh) this device. Pairing comes in week 2.
+    // Register (or refresh) this device. Pairing replaces this in week 2.
+    let Some(registration_secret) = config.registration_secret.clone() else {
+        eprintln!(
+            "registration_secret missing from config.toml (get it from the other team member)"
+        );
+        exit(1);
+    };
     let mut reg_args = BTreeMap::new();
+    reg_args.insert(
+        "registrationSecret".to_string(),
+        Value::String(registration_secret),
+    );
     reg_args.insert("secretHash".to_string(), Value::String(secret_hash.clone()));
     reg_args.insert("name".to_string(), Value::String(device_name.clone()));
     match client.mutation("agent:register", reg_args).await {

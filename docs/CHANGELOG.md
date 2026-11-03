@@ -15,8 +15,9 @@ Tags: **[A]** = Aditya · **[T]** = Tirth
 - Agent: S1 spike (CPU, RAM, temperature every second) and config loading from `config.toml` with the team Convex URLs. [A]
 - Windows installer requirement: UAC admin prompt at install only; agent runs as the normal user. [A]
 - Spike S4: agent pushes CPU/RAM to Convex every second (`spike:pushLatest`, `isFake: true`); findings in `docs/spikes.md`. [A]
-- Backend: `devices` and `latest` tables (subset of Database.md) and `agent:register` / `agent:pushLatest` / `agent:getLatest`, authenticated by SHA-256 of the device secret. [A]
+- Backend: `devices` and `latest` tables (subset of Database.md) and `agent:register` / `agent:pushLatest` (read endpoint removed until pairing), authenticated by SHA-256 of the device secret. [A]
 - Agent: generates a 256-bit device secret on first run and sends only its hash. [A]
+- Security: `agent:register` needs the team registration secret; public read endpoint removed until pairing. [A]
 - MIT `LICENSE` (Aditya Prasad, Tirth Patel). [A+T]
 
 ### Decided (3 Nov 2026)

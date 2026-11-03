@@ -1,8 +1,11 @@
 // Agent endpoints (docs/Architecture.md §3.1, owner: Aditya).
-// Auth: the agent sends SHA-256(device secret); Convex only stores and compares the hash
-// (docs/Flow.md §3, docs/Security.md §6). Pairing (week 2) will link devices to users;
-// until then `register` is open, so treat devices created now as test data (isFake: true).
-import { mutation, query, MutationCtx } from "./_generated/server";
+// Auth:
+//  - register: needs the team registration secret (env var AGENT_REGISTRATION_SECRET).
+//    Only the two of us know it. Replaced by pairing in week 2 (docs/Flow.md §3).
+//  - pushLatest: the agent sends SHA-256(device secret); Convex compares the hash
+//    (docs/Flow.md §3, docs/Security.md §6).
+// No public read endpoint: the app reads through pairing in week 2.
+import { mutation, MutationCtx } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 
 async function deviceBySecretHash(ctx: MutationCtx, secretHash: string) {
@@ -13,8 +16,16 @@ async function deviceBySecretHash(ctx: MutationCtx, secretHash: string) {
 }
 
 export const register = mutation({
-  args: { secretHash: v.string(), name: v.string() },
+  args: {
+    registrationSecret: v.string(),
+    secretHash: v.string(),
+    name: v.string(),
+  },
   handler: async (ctx, args) => {
+    const expected = process.env.AGENT_REGISTRATION_SECRET;
+    if (!expected || args.registrationSecret !== expected) {
+      throw new ConvexError("not authorized");
+    }
     const now = Date.now();
     const existing = await deviceBySecretHash(ctx, args.secretHash);
     if (existing) {
@@ -62,15 +73,5 @@ export const pushLatest = mutation({
     } else {
       await ctx.db.insert("latest", row);
     }
-  },
-});
-
-export const getLatest = query({
-  args: { deviceId: v.id("devices") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("latest")
-      .withIndex("by_device", (q) => q.eq("deviceId", args.deviceId))
-      .unique();
   },
 });

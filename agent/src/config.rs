@@ -15,6 +15,10 @@ pub struct Config {
     /// 256-bit device secret as hex. Generated on first run (docs/Security.md §6).
     #[serde(default)]
     pub device_secret: Option<String>,
+    /// Team registration secret, needed once per PC to register (until pairing, week 2).
+    /// Shared privately between the two of us, never in git (docs/Security.md §7).
+    #[serde(default)]
+    pub registration_secret: Option<String>,
 }
 
 #[derive(Debug)]

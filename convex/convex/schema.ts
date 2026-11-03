@@ -1,6 +1,6 @@
 // Subset of docs/Database.md: devices + latest. The full schema lands in week 2.
 // Changes must be backward-compatible (add optional fields only) — docs/Development.md §3.
-// isFake: true marks spike/test rows; they are deleted before week 3.
+// isFake: true marks test rows; they are deleted before week 3.
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 

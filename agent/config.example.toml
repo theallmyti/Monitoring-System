@@ -5,6 +5,9 @@
 convex_url = "https://different-alpaca-219.convex.cloud"
 http_actions_url = "https://different-alpaca-219.convex.site"
 
+# Team registration secret. Ask the other team member privately; never commit it.
+# registration_secret = "paste-here"
+
 # Seconds between summaries (docs/SRS.md FR-30).
 summary_interval_secs = 60
 
