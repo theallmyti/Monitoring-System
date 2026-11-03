@@ -9,6 +9,7 @@
  */
 
 import type * as agent from "../agent.js";
+import type * as dashboard from "../dashboard.js";
 
 import type {
   ApiFromModules,
@@ -18,6 +19,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   agent: typeof agent;
+  dashboard: typeof dashboard;
 }>;
 
 /**

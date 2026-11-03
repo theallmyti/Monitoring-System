@@ -1,0 +1,16 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { ConvexProvider, ConvexReactClient } from "convex/react";
+import App from "./App";
+import "./styles.css";
+
+const url = import.meta.env.VITE_CONVEX_URL as string;
+const client = new ConvexReactClient(url);
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <ConvexProvider client={client}>
+      <App />
+    </ConvexProvider>
+  </React.StrictMode>,
+);
