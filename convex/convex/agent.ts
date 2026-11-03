@@ -47,11 +47,25 @@ export const pushLatest = mutation({
     ts: v.number(),
     cpuUtil: v.number(),
     ramUsedPct: v.number(),
+    gpu: v.optional(
+      v.object({
+        temp: v.number(),
+        util: v.number(),
+        vramUsed: v.number(),
+        vramTotal: v.number(),
+        powerW: v.number(),
+        clock: v.number(),
+        fanPct: v.optional(v.number()),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
     // FR-28: reject impossible values.
     if (args.cpuUtil < 0 || args.cpuUtil > 100 || args.ramUsedPct < 0 || args.ramUsedPct > 100) {
       throw new ConvexError("value out of range");
+    }
+    if (args.gpu && (args.gpu.temp < 0 || args.gpu.temp > 125 || args.gpu.util < 0 || args.gpu.util > 100)) {
+      throw new ConvexError("gpu value out of range");
     }
     const device = await deviceBySecretHash(ctx, args.secretHash);
     if (!device) {
@@ -63,6 +77,7 @@ export const pushLatest = mutation({
       ts: args.ts,
       cpu: { util: args.cpuUtil },
       ram: { usedPct: args.ramUsedPct },
+      gpu: args.gpu,
     };
     const existing = await ctx.db
       .query("latest")

@@ -4,6 +4,7 @@
 //! (ConvexClient::new, ::mutation).
 
 mod config;
+mod gpu;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -12,6 +13,27 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use convex::{ConvexClient, FunctionResult, Value};
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
+
+/// Convex `gpu` object (docs/Database.md `latest.gpu`). Optional fields are left out when absent.
+fn gpu_value(g: &gpu::GpuStats) -> Value {
+    let mut o = BTreeMap::new();
+    o.insert("temp".to_string(), Value::Float64(f64::from(g.temp_c)));
+    o.insert("util".to_string(), Value::Float64(f64::from(g.util_pct)));
+    o.insert(
+        "vramUsed".to_string(),
+        Value::Float64(g.vram_used_mb as f64),
+    );
+    o.insert(
+        "vramTotal".to_string(),
+        Value::Float64(g.vram_total_mb as f64),
+    );
+    o.insert("powerW".to_string(), Value::Float64(g.power_w));
+    o.insert("clock".to_string(), Value::Float64(f64::from(g.clock_mhz)));
+    if let Some(fan) = g.fan_pct {
+        o.insert("fanPct".to_string(), Value::Float64(f64::from(fan)));
+    }
+    Value::Object(o)
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -78,6 +100,10 @@ async fn main() {
     )
     .expect("failed to read system info");
 
+    // No NVIDIA driver means no GPU stats; the rest of the agent keeps running (NFR-07).
+    let nvml = gpu::init().ok();
+    println!("gpu={}", if nvml.is_some() { "nvidia" } else { "none" });
+
     // CPU usage needs two samples separated by a short delay.
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -99,10 +125,21 @@ async fn main() {
         args.insert("ts".to_string(), Value::Float64(ts));
         args.insert("cpuUtil".to_string(), Value::Float64(cpu_util));
         args.insert("ramUsedPct".to_string(), Value::Float64(ram_pct));
+        let gpu_text = match nvml.as_ref().map(gpu::read) {
+            Some(Ok(g)) => {
+                args.insert("gpu".to_string(), gpu_value(&g));
+                format!(" gpu={}C {}%", g.temp_c, g.util_pct)
+            }
+            Some(Err(e)) => {
+                eprintln!("gpu read failed: {e}");
+                String::new()
+            }
+            None => String::new(),
+        };
 
         match client.mutation("agent:pushLatest", args).await {
             Ok(FunctionResult::Value(_)) => {
-                println!("pushed cpu={cpu_util:.1}% ram={ram_pct:.1}%");
+                println!("pushed cpu={cpu_util:.1}% ram={ram_pct:.1}%{gpu_text}");
             }
             Ok(FunctionResult::ErrorMessage(msg)) => eprintln!("convex error: {msg}"),
             Ok(FunctionResult::ConvexError(err)) => eprintln!("convex error: {err:?}"),

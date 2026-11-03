@@ -17,5 +17,17 @@ export default defineSchema({
     ts: v.number(),
     cpu: v.object({ util: v.number() }),
     ram: v.object({ usedPct: v.number() }),
+    // Optional: only NVIDIA machines send it. Units: MB, W, MHz, %.
+    gpu: v.optional(
+      v.object({
+        temp: v.number(),
+        util: v.number(),
+        vramUsed: v.number(),
+        vramTotal: v.number(),
+        powerW: v.number(),
+        clock: v.number(),
+        fanPct: v.optional(v.number()),
+      }),
+    ),
   }).index("by_device", ["deviceId"]),
 });

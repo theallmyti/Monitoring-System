@@ -41,9 +41,18 @@ Convex deployment: prod `tidy-newt-65` (cloud `https://tidy-newt-65.convex.cloud
 
 ---
 
+## S3 — NVIDIA GPU stats via NVML [A] · done 3 Nov 2026
+
+- Machine: ASUS TUF A15, RTX 3050 Laptop GPU (4 GB), driver 596.36.
+- Crate: `nvml-wrapper` 0.13.0. Signatures read from the published crate source (the docs.rs page for Device returned 404): `Nvml::init`, `device_by_index(0)`, `temperature(TemperatureSensor::Gpu)`, `utilization_rates().gpu`, `memory_info()` (total/used in bytes), `power_usage()` (mW), `clock_info(Clock::Graphics)`, `fan_speed(0)`.
+- Fan speed is N/A on this laptop: `fan_speed` errors, so `fanPct` is left out (optional in the schema).
+- No NVIDIA driver: `Nvml::init` fails and the agent runs without GPU data (NFR-07).
+- Live test against dev: 12 pushes in 14 s, zero errors. Each row carries `gpu` (62 °C, 7 %, 1200 MHz, 14.8 W, 4096 MB VRAM).
+- Backend: `latest.gpu` is an optional object (additive schema change, `Database.md` field names). Range checks: temp 0–125 °C, util 0–100 %.
+- **Prod still needs the redeploy** (`npx convex deploy`) before the GPU fields are stored there.
+
 ## Open for later spikes
 
 - S2: Pi / i3 hwmon per-core temps.
-- S3: NVML GPU stats (RTX 3050 / 4050).
 - S5: seed mutation with fake stats.
 - S9: Convex Auth Password provider from native Android.

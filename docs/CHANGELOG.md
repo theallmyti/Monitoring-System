@@ -20,6 +20,7 @@ Tags: **[A]** = Aditya · **[T]** = Tirth
 - Backend deployed to prod (`tidy-newt-65`); agent config points at prod. [A]
 - Security: `agent:register` needs the team registration secret; public read endpoint removed until pairing. [A]
 - Simplify (Ponytail review): backend no longer writes the device row per live push; agent config drops unused keys; test for secret generation. [A]
+- Spike S3: NVIDIA GPU stats (temp, util, VRAM, power, clock, fan) via NVML, pushed as optional `latest.gpu`. [A]
 - MIT `LICENSE` (Aditya Prasad, Tirth Patel). [A+T]
 
 ### Decided (3 Nov 2026)
