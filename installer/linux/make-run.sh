@@ -40,6 +40,7 @@ tmp=\$(mktemp -d)
 trap 'rm -rf "\$tmp"' EXIT
 line=\$(awk '/^__PAYLOAD_BELOW__\$/ { print NR + 1; exit }' "\$0")
 tail -n +"\$line" "\$0" | tar -xzf - -C "\$tmp"
+chmod 755 "\$tmp/pc-monitor-agent" # file modes are not kept when packaged on Windows
 sh "\$tmp/install.sh" "\$tmp/pc-monitor-agent"
 exit 0
 __PAYLOAD_BELOW__

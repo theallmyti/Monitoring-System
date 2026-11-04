@@ -15,9 +15,9 @@ command -v systemctl >/dev/null || { echo "systemd is required." >&2; exit 1; }
 
 bin=${1:-}
 [ -n "$bin" ] || for c in "$here/pc-monitor-agent" "$here/../../agent/target/release/pc-monitor-agent"; do
-  [ -x "$c" ] && { bin=$c; break; }
+  [ -f "$c" ] && { bin=$c; break; }
 done
-[ -n "$bin" ] && [ -x "$bin" ] || { echo "Agent binary not found. Pass its path: sudo sh $0 /path/to/pc-monitor-agent" >&2; exit 1; }
+[ -n "$bin" ] && [ -f "$bin" ] || { echo "Agent binary not found. Pass its path: sudo sh $0 /path/to/pc-monitor-agent" >&2; exit 1; }
 
 url=${CONVEX_URL:-}
 [ -n "$url" ] || { [ -f "$here/convex-url.txt" ] && url=$(tr -d ' \r\n' < "$here/convex-url.txt"); }
