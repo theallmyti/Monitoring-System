@@ -48,15 +48,22 @@ export const overview = query({
   },
 });
 
-// Per-minute history for one device since `sinceMs` (oldest first). Max ~1440 rows for 24 h.
+// Per-minute history for one device from `sinceMs` (oldest first), optionally up to `untilMs`
+// (exclusive). The site asks for whole past hours separately from the current hour: a query whose
+// range ends before "now" is not re-run when a new summary arrives, so it is read once an hour
+// instead of every minute (about 25x fewer rows read; Convex bills per row read).
 export const history = query({
-  args: { token: v.string(), deviceId: v.id("devices"), sinceMs: v.number() },
+  args: { token: v.string(), deviceId: v.id("devices"), sinceMs: v.number(), untilMs: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, args.token);
     await ownedDevice(ctx, user, args.deviceId);
+    const { untilMs } = args;
     return await ctx.db
       .query("summaries")
-      .withIndex("by_device_time", (q) => q.eq("deviceId", args.deviceId).gte("minuteTs", args.sinceMs))
+      .withIndex("by_device_time", (q) => {
+        const from = q.eq("deviceId", args.deviceId).gte("minuteTs", args.sinceMs);
+        return untilMs === undefined ? from : from.lt("minuteTs", untilMs);
+      })
       .collect();
   },
 });
@@ -68,6 +75,23 @@ export const setViewer = mutation({
     const user = await requireUserAndTouch(ctx, args.token);
     await ownedDevice(ctx, user, args.deviceId);
     await ctx.db.patch(args.deviceId, { viewerUntil: Date.now() + VIEWER_WINDOW_MS });
+  },
+});
+
+// The same for all of the user's devices in one call (the site uses this: one call per 15 s
+// instead of one per device).
+export const setViewerAll = mutation({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const user = await requireUserAndTouch(ctx, args.token);
+    const until = Date.now() + VIEWER_WINDOW_MS;
+    const devices = await ctx.db
+      .query("devices")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    for (const d of devices) {
+      await ctx.db.patch(d._id, { viewerUntil: until });
+    }
   },
 });
 

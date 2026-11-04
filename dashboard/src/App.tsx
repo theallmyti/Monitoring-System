@@ -147,16 +147,16 @@ function Dashboard({ token, email, onSignOut }: { token: string; email: string; 
     () => new URLSearchParams(window.location.search).get("pair"),
   );
   const data = useQuery(anyApi.dashboard.overview, { token }) as Overview | undefined;
-  const setViewer = useMutation(anyApi.dashboard.setViewer);
-  const deviceIds = (data?.devices ?? []).map((d) => d.id).join(",");
+  const setViewerAll = useMutation(anyApi.dashboard.setViewerAll);
+  const hasDevices = (data?.devices.length ?? 0) > 0;
 
   // FR-33: while this page is visible, keep live data flowing (now + 30 s, renewed every 15 s).
+  // One call covers all devices.
   useEffect(() => {
-    if (!deviceIds) return;
-    const ids = deviceIds.split(",");
+    if (!hasDevices) return;
     const beat = () => {
       if (document.visibilityState !== "visible") return;
-      for (const id of ids) setViewer({ token, deviceId: id }).catch(() => {});
+      setViewerAll({ token }).catch(() => {});
     };
     beat();
     const timer = setInterval(beat, 15_000);
@@ -165,7 +165,7 @@ function Dashboard({ token, email, onSignOut }: { token: string; email: string; 
       clearInterval(timer);
       document.removeEventListener("visibilitychange", beat);
     };
-  }, [deviceIds, token, setViewer]);
+  }, [hasDevices, token, setViewerAll]);
 
   if (pairing !== null) {
     return <PairScreen token={token} initialCode={pairing || undefined} onDone={() => setPairing(null)} />;

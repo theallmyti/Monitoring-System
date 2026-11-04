@@ -10,16 +10,23 @@ export const CPU_TEMP_LIMIT = 90;
 export const GPU_TEMP_LIMIT = 85;
 export const RAM_LIMIT = 90;
 
-const MINUTE = 60_000;
+const HOUR = 3_600_000;
 
 export function DeviceSection({ device, token, range }: { device: Device; token: string; range: Range }) {
-  // Floor to the minute so the query arguments only change once a minute, not every second.
-  const sinceMs = Math.floor(Date.now() / MINUTE) * MINUTE - range.hours * 3_600_000;
-  const history = useQuery(anyApi.dashboard.history, {
+  // Two queries: whole past hours (arguments change once an hour, and new summaries do not
+  // re-run it) and the current hour (small, updates every minute). Saves Convex reads.
+  const hourStart = Math.floor(Date.now() / HOUR) * HOUR;
+  const older = useQuery(anyApi.dashboard.history, {
     token,
     deviceId: device.id,
-    sinceMs,
+    sinceMs: hourStart - range.hours * HOUR,
+    untilMs: hourStart,
   }) as Summary[] | undefined;
+  const recent = useQuery(anyApi.dashboard.history, { token, deviceId: device.id, sinceMs: hourStart }) as
+    | Summary[]
+    | undefined;
+  const cutoff = Date.now() - range.hours * HOUR;
+  const history = older && recent ? [...older, ...recent].filter((s) => s.minuteTs >= cutoff) : undefined;
 
   const l = device.latest;
   const series = (pick: (s: Summary) => number | undefined): Point[] =>

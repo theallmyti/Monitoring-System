@@ -63,3 +63,26 @@ test("the owner can rename and remove a device; removal revokes its secret (T-13
     t.mutation(api.agent.pushLatest, { secretHash: hash, ts: Date.now(), cpuUtil: 1, ramUsedPct: 1 }),
   ).rejects.toThrow(/unknown device/);
 });
+
+test("history can end before now, and setViewerAll marks only the caller's devices", async () => {
+  const t = convexTest(schema, modules);
+  const aditya = await userWithDevice(t, "aditya@example.com", "a".repeat(64));
+  const tirth = await userWithDevice(t, "tirth@example.com", "b".repeat(64));
+  const hour = 3_600_000;
+  const now = Date.now();
+  await t.run(async (ctx) => {
+    for (const minuteTs of [now - 2 * hour, now - hour, now - 60_000]) {
+      await ctx.db.insert("summaries", { deviceId: aditya.deviceId, minuteTs, cpuUtilAvg: 1, cpuUtilMax: 1, ramPctAvg: 1, ramPctMax: 1 });
+    }
+  });
+  const args = { token: aditya.token, deviceId: aditya.deviceId };
+  const older = await t.query(api.dashboard.history, { ...args, sinceMs: now - 3 * hour, untilMs: now - hour });
+  const recent = await t.query(api.dashboard.history, { ...args, sinceMs: now - hour });
+  expect(older.map((s) => s.minuteTs)).toEqual([now - 2 * hour]);
+  expect(recent.map((s) => s.minuteTs)).toEqual([now - hour, now - 60_000]);
+
+  await t.mutation(api.dashboard.setViewerAll, { token: aditya.token });
+  const [mine, theirs] = await t.run(async (ctx) => [await ctx.db.get(aditya.deviceId), await ctx.db.get(tirth.deviceId)]);
+  expect(mine?.viewerUntil).toBeGreaterThan(now);
+  expect(theirs?.viewerUntil).toBeUndefined();
+});
