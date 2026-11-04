@@ -28,3 +28,6 @@ agent/agent.log.err
 installer/vendor/
 dist/
 installer/convex-url.txt
+
+# Convex database backups (personal data)
+backups/
