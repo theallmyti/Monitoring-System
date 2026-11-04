@@ -10,4 +10,7 @@ crons.daily("delete old summaries", { hourUTC: 21, minuteUTC: 30 }, internal.sum
 // Rate-limit events, failed sign-ins and expired pairing codes (cleanup.ts).
 crons.daily("delete expired rows", { hourUTC: 21, minuteUTC: 45 }, internal.cleanup.deleteExpired, {});
 
+// Accounts migration: ownerless devices idle for 30 days (migrations.ts).
+crons.daily("remove idle ownerless devices", { hourUTC: 22, minuteUTC: 0 }, internal.migrations.removeIdleOwnerless, {});
+
 export default crons;

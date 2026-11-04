@@ -67,6 +67,8 @@ export const register = mutation({
     if (!expected || args.registrationSecret !== expected) {
       throw new ConvexError("not authorized");
     }
+    // Shows in the Convex logs; when this stops appearing, register can be deleted (migrations.ts).
+    console.warn(`legacy agent:register used by "${args.name}" (agent ${args.agentVersion ?? "unknown"})`);
     const now = Date.now();
     const report = { name: args.name, capabilities: args.capabilities, agentVersion: args.agentVersion };
     const existing = await deviceBySecretHash(ctx, args.secretHash);
