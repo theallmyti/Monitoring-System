@@ -31,3 +31,6 @@ installer/convex-url*.txt
 
 # Convex database backups (personal data)
 backups/
+
+# Claude Code local permissions (per person)
+.claude/settings.local.json
