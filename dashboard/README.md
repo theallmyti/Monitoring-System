@@ -1,18 +1,35 @@
-# PC Monitor dashboard (personal)
+# PC Monitor site
 
-Live view of every device the agents report to Convex. Reads `dashboard:overview`,
-which needs the read token (`read-token.secret`, git-ignored, never committed).
+Sign in, pair computers by scanning their QR code, and watch them live. Every Convex call
+carries the session token; the backend only returns the signed-in user's own devices.
 
 ## Run locally
     cd dashboard
     npm install
-    VITE_CONVEX_URL=https://<dev-deployment>.convex.cloud npm run dev
+    npm run dev
 
-## Build for the Pi
-    VITE_CONVEX_URL=https://<prod-deployment>.convex.cloud npm run build
-The output is `dist/`, served as static files.
+The Convex URL comes from `dashboard/.env.local` (git-ignored, one line:
+`VITE_CONVEX_URL=https://<deployment>.convex.cloud`; ask the project owner).
+
+## Hosting (Cloudflare Pages)
+Static files on Cloudflare's CDN, free plan. `public/_headers` adds the security headers
+(content security policy, no framing, no referrer).
+
+One-time setup:
+
+    npx --yes wrangler@4.151.3 login
+    npx --yes wrangler@4.151.3 pages project create pc-monitor --production-branch main
+
+Each release:
+
+    npm run deploy
+
+`deploy` builds with the URL from `.env.local` and uploads `dist/`. The site is then at
+`https://pc-monitor.pages.dev` (Cloudflare adds a suffix if that name is taken). The Convex URL
+ends up inside the built JavaScript; that is expected. Access is protected by sign-in.
 
 ## Notes
 - Thresholds match docs/PRD.md: CPU 90 °C, GPU 85 °C, RAM 90 %.
-- "Online" means the newest push is under 3 minutes old.
-- The token is kept in this browser's localStorage. Replace with sign-in in week 2.
+- "Online" means a summary arrived in the last 3 minutes.
+- The session token is kept in this browser's localStorage, so the site must never render
+  raw HTML (CI fails on `dangerouslySetInnerHTML` and similar).
