@@ -215,7 +215,11 @@ pub async fn run(path: &Path, ui: Ui) {
 
     let mut hello = BTreeMap::new();
     hello.insert("secretHash".to_string(), text(&secret_hash));
-    if let Ok(FunctionResult::Value(_)) = client.mutation("agent:hello", hello).await {
+    // Already linked to an account: nothing to do. A device paired before accounts existed has
+    // no owner, so it goes through pairing again to be claimed.
+    if let Ok(FunctionResult::Value(Value::Object(o))) = client.mutation("agent:hello", hello).await
+        && o.get("owned") == Some(&Value::Boolean(true))
+    {
         ui.status("paired", "", 0, "This computer is already paired.");
         return;
     }

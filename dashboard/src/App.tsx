@@ -1,105 +1,146 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { anyApi } from "convex/server";
+import { ConvexError } from "convex/values";
 import { Device, Overview, RANGES, Range } from "./types";
 import { DeviceSection, CPU_TEMP_LIMIT, GPU_TEMP_LIMIT, RAM_LIMIT } from "./DeviceSection";
 import { Kpi } from "./Kpi";
-import { PairScreen, Scanner } from "./PairScreen";
+import { PairScreen } from "./PairScreen";
 
-// Owner-only read token. Kept in this browser's localStorage (per-viewer convenience).
-const TOKEN_KEY = "pcm-read-token";
+// Session token from sign-in, kept in this browser's localStorage. The backend stores only its hash.
+const SESSION_KEY = "pcm-session";
+
+function loadSession(): string | null {
+  try {
+    return localStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(token: string | null) {
+  try {
+    if (token) localStorage.setItem(SESSION_KEY, token);
+    else localStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* private window: the session lasts until the tab closes */
+  }
+}
 
 export default function App() {
-  const [token, setToken] = useState<string | null>(() => {
-    // A link from "Open on phone" carries the token after #. The part after # is never sent to
-    // the server; save it and remove it from the address bar.
-    const fromLink = window.location.hash.match(/token=([0-9a-f]{16,})/i)?.[1];
-    if (fromLink) {
-      history.replaceState(null, "", window.location.pathname + window.location.search);
-      try {
-        localStorage.setItem(TOKEN_KEY, fromLink);
-      } catch {
-        /* private window: keep the token in memory only */
-      }
-      return fromLink;
-    }
-    try {
-      return localStorage.getItem(TOKEN_KEY);
-    } catch {
-      return null;
-    }
-  });
+  const [token, setToken] = useState<string | null>(loadSession);
+  const signedIn = (t: string) => {
+    saveSession(t);
+    setToken(t);
+  };
+  const signedOut = () => {
+    saveSession(null);
+    setToken(null);
+  };
+  if (!token) return <AuthScreen onSignedIn={signedIn} />;
+  return <SignedIn token={token} onSignedOut={signedOut} />;
+}
 
-  if (!token) {
+// Checks the session first: an expired or ended session goes back to the sign-in screen.
+function SignedIn({ token, onSignedOut }: { token: string; onSignedOut: () => void }) {
+  const me = useQuery(anyApi.auth.me, { token }) as { email: string } | null | undefined;
+  const signOut = useMutation(anyApi.auth.signOut);
+  useEffect(() => {
+    if (me === null) onSignedOut();
+  }, [me, onSignedOut]);
+  if (!me) {
     return (
-      <TokenScreen
-        onSave={(t) => {
-          try {
-            localStorage.setItem(TOKEN_KEY, t);
-          } catch {
-            /* private window: keep the token in memory only */
-          }
-          setToken(t);
-        }}
-      />
+      <main className="center">
+        <p className="empty">Loading…</p>
+      </main>
     );
   }
   return (
     <Dashboard
       token={token}
+      email={me.email}
       onSignOut={() => {
-        try {
-          localStorage.removeItem(TOKEN_KEY);
-        } catch {
-          /* ignore */
-        }
-        setToken(null);
+        void signOut({ token }).finally(onSignedOut);
       }}
     />
   );
 }
 
-// Accepts the unlock QR (a link with #token=...) or the bare token.
-function tokenFrom(text: string): string | null {
-  const t = text.trim();
-  return t.match(/token=([0-9a-f]{16,})/i)?.[1] ?? (/^[0-9a-f]{16,}$/i.test(t) ? t : null);
+function errorText(e: unknown) {
+  return e instanceof ConvexError && typeof e.data === "string"
+    ? e.data
+    : "Something went wrong. Check the connection and try again.";
 }
 
-function TokenScreen({ onSave }: { onSave: (t: string) => void }) {
-  const [value, setValue] = useState("");
-  const [scanning, setScanning] = useState(false);
+function AuthScreen({ onSignedIn }: { onSignedIn: (token: string) => void }) {
+  const [creating, setCreating] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const signIn = useAction(anyApi.auth.signIn);
+  const signUp = useAction(anyApi.auth.signUp);
+
   return (
     <main className="center">
       <form
         className="login"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          if (value.trim()) onSave(tokenFrom(value) ?? value.trim());
+          setBusy(true);
+          setError(null);
+          try {
+            const r = (await (creating ? signUp : signIn)({ email, password })) as { token: string };
+            onSignedIn(r.token);
+          } catch (err) {
+            setError(errorText(err));
+          } finally {
+            setBusy(false);
+          }
         }}
       >
         <h1>PC Monitor</h1>
-        {scanning ? (
-          <>
-            <p className="muted">Point the camera at the unlock QR code on your computer.</p>
-            <Scanner accept={(t) => tokenFrom(t) !== null} onCode={(t) => onSave(tokenFrom(t)!)} />
-            <button type="button" className="link" onClick={() => setScanning(false)}>Cancel</button>
-          </>
-        ) : (
-          <>
-            <button type="button" className="action" onClick={() => setScanning(true)}>Scan unlock QR</button>
-            <label>
-              Or paste the dashboard read token
-              <input type="password" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} />
-            </label>
-            <button type="submit" className="link">Open dashboard</button>
-          </>
+        <p className="muted">{creating ? "Create an account to see your computers." : "Sign in to see your computers."}</p>
+        <label>
+          Email
+          <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        <label>
+          Password
+          <input
+            type="password"
+            autoComplete={creating ? "new-password" : "current-password"}
+            required
+            minLength={creating ? 8 : undefined}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+        {creating && <p className="muted small">Use at least 8 characters.</p>}
+        {error && (
+          <p className="err" role="alert">
+            {error}
+          </p>
         )}
+        <button type="submit" className="action" disabled={busy}>
+          {busy ? "Please wait…" : creating ? "Create account" : "Sign in"}
+        </button>
+        <button
+          type="button"
+          className="link"
+          onClick={() => {
+            setCreating(!creating);
+            setError(null);
+          }}
+        >
+          {creating ? "I already have an account" : "Create an account"}
+        </button>
       </form>
     </main>
   );
 }
 
-function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void }) {
+function Dashboard({ token, email, onSignOut }: { token: string; email: string; onSignOut: () => void }) {
   const [range, setRange] = useState<Range>(RANGES[0]);
   // null: dashboard. "": pairing scanner. "ABC123": pairing with that code (from ?pair=).
   const [pairing, setPairing] = useState<string | null>(
@@ -171,6 +212,7 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
             ))}
           </div>
           <button type="button" className="action" onClick={() => setPairing("")}>Pair device</button>
+          <span className="muted small">{email}</span>
           <button type="button" className="link" onClick={onSignOut}>Sign out</button>
         </div>
         </div>

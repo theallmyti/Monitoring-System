@@ -1,4 +1,4 @@
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { anyApi } from "convex/server";
 import { Device } from "./types";
 import { Summary, Range } from "./types";
@@ -31,6 +31,7 @@ export function DeviceSection({ device, token, range }: { device: Device; token:
   const ageSec = Math.max(0, Math.round((Date.now() - device.lastSeenAt) / 1000));
   const age = ageSec < 120 ? `${ageSec} s ago` : `${Math.round(ageSec / 60)} min ago`;
   const vram = l?.gpu ? (l.gpu.vramUsed / l.gpu.vramTotal) * 100 : undefined;
+  const removeDevice = useMutation(anyApi.dashboard.removeDevice);
 
   return (
     <section className="device" aria-labelledby={`dev-${device.id}`}>
@@ -42,6 +43,21 @@ export function DeviceSection({ device, token, range }: { device: Device; token:
             {device.online ? "Online" : "Offline"} · last update {age}
           </p>
         </div>
+        <button
+          type="button"
+          className="link"
+          onClick={() => {
+            if (
+              window.confirm(
+                `Remove ${device.name}? Its history is deleted, and it stops sending data until it is paired again.`,
+              )
+            ) {
+              void removeDevice({ token, deviceId: device.id });
+            }
+          }}
+        >
+          Remove
+        </button>
       </header>
 
       {!l ? (

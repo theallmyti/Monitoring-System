@@ -9,11 +9,14 @@
  */
 
 import type * as agent from "../agent.js";
+import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as model from "../model.js";
 import type * as pairing from "../pairing.js";
+import type * as passwords from "../passwords.js";
 import type * as summaries from "../summaries.js";
+import type * as users from "../users.js";
 import type * as validators from "../validators.js";
 
 import type {
@@ -24,11 +27,14 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   agent: typeof agent;
+  auth: typeof auth;
   crons: typeof crons;
   dashboard: typeof dashboard;
   model: typeof model;
   pairing: typeof pairing;
+  passwords: typeof passwords;
   summaries: typeof summaries;
+  users: typeof users;
   validators: typeof validators;
 }>;
 

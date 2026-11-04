@@ -6,7 +6,31 @@ import { v } from "convex/values";
 import { battery, capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
 
 export default defineSchema({
+  // Accounts (docs/Database.md users, sessions, loginAttempts; docs/Security.md §3–4).
+  users: defineTable({
+    email: v.string(), // lowercase, unique
+    passwordHash: v.string(), // scrypt$N$r$p$salt$key
+    createdAt: v.number(),
+    setupDone: v.boolean(), // first-run threshold setup finished (FR-40)
+  }).index("by_email", ["email"]),
+
+  sessions: defineTable({
+    userId: v.id("users"),
+    tokenHash: v.string(), // SHA-256 of the random session token
+    lastUsedAt: v.number(), // expires after 30 days without use (FR-02)
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_user", ["userId"]),
+
+  // Failed sign-ins, for the 5 per 15 min limit (FR-04).
+  loginAttempts: defineTable({
+    email: v.string(),
+    at: v.number(),
+  }).index("by_email_at", ["email", "at"]),
+
   devices: defineTable({
+    // Owner, set when a signed-in user confirms pairing. Every read checks it (docs/Security.md §2).
+    userId: v.optional(v.id("users")),
     name: v.string(),
     secretHash: v.string(), // SHA-256 hex of the device secret (docs/Security.md §6)
     lastSeenAt: v.number(),
@@ -18,7 +42,9 @@ export default defineSchema({
     // Reported by the agent at registration (FR-15).
     capabilities: v.optional(capabilities),
     agentVersion: v.optional(v.string()),
-  }).index("by_secretHash", ["secretHash"]),
+  })
+    .index("by_secretHash", ["secretHash"])
+    .index("by_user", ["userId"]),
 
   // Open pairing codes (docs/Flow.md §3). Confirmed rows keep the device link for the agent.
   pairingRequests: defineTable({

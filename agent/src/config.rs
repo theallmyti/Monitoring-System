@@ -88,7 +88,7 @@ mod tests {
     fn parses_example_config() {
         let cfg: Config = toml::from_str(include_str!("../config.example.toml"))
             .expect("example config must parse");
-        assert_eq!(cfg.convex_url, "https://tidy-newt-65.convex.cloud");
+        assert_eq!(cfg.convex_url, "https://YOUR-DEPLOYMENT.convex.cloud");
         assert_eq!(cfg.live_interval_secs, 1);
         assert_eq!(cfg.device_secret, None);
     }

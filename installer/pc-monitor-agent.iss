@@ -16,7 +16,17 @@
 #define AppName "PC Monitor Agent"
 #define AppVersion "0.1.0"
 #define ServiceName "PCMonitorAgent"
-#define ConvexUrl "https://tidy-newt-65.convex.cloud"
+; The Convex URL is kept out of the repo: installer/convex-url.txt (git-ignored, one line).
+#define UrlFile AddBackslash(SourcePath) + "convex-url.txt"
+#if !FileExists(UrlFile)
+  #error installer/convex-url.txt is missing. Put the Convex deployment URL in it (it is not committed).
+#endif
+#define UrlHandle FileOpen(UrlFile)
+#define ConvexUrl Trim(FileRead(UrlHandle))
+#expr FileClose(UrlHandle)
+#if Pos(".convex.cloud", ConvexUrl) == 0
+  #error installer/convex-url.txt must hold a Convex URL like https://<deployment>.convex.cloud
+#endif
 #define StateKey "SOFTWARE\PC Monitor"
 
 [Setup]

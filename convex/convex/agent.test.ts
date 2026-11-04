@@ -12,7 +12,6 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-11-03T10:00:00Z"));
   vi.stubEnv("AGENT_REGISTRATION_SECRET", "team-secret");
-  vi.stubEnv("DASHBOARD_READ_TOKEN", "read-token");
 });
 
 afterEach(() => {
@@ -68,16 +67,23 @@ test("pushSummary rejects impossible values and unknown devices", async () => {
   ).rejects.toThrow(/unknown device/);
 });
 
-test("watchViewer follows setViewer, which needs the read token", async () => {
+test("watchViewer follows setViewer from the device owner", async () => {
   const { t, deviceId } = await setup();
   expect(await t.query(api.agent.watchViewer, { secretHash: HASH })).toBe(0);
 
-  await t.mutation(api.dashboard.setViewer, { token: "read-token", deviceId });
-  expect(await t.query(api.agent.watchViewer, { secretHash: HASH })).toBe(Date.now() + 30_000);
+  const { token } = await t.action(api.auth.signUp, { email: "owner@example.com", password: "password one" });
+  const [user] = await t.run((ctx) => ctx.db.query("users").collect());
+  await t.run((ctx) => ctx.db.patch(deviceId, { userId: user._id }));
+
+  const before = Date.now();
+  await t.mutation(api.dashboard.setViewer, { token, deviceId });
+  const until = await t.query(api.agent.watchViewer, { secretHash: HASH });
+  expect(until).toBeGreaterThanOrEqual(before + 30_000);
+  expect(until).toBeLessThan(before + 31_000);
 
   await expect(
-    t.mutation(api.dashboard.setViewer, { token: "wrong", deviceId }),
-  ).rejects.toThrow(/not authorized/);
+    t.mutation(api.dashboard.setViewer, { token: "f".repeat(64), deviceId }),
+  ).rejects.toThrow(/signed out/);
 });
 
 test("pushLatest updates the latest row and writes no history", async () => {

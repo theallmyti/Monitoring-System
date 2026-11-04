@@ -33,10 +33,12 @@ Settings → Apps, or `dist\pc-monitor-agent-uninstall.exe` (works for any insta
 
 ## Build
 1. `cd agent && cargo build --release`
-2. `powershell -File installer\fetch-pawnio.ps1` (needs `gh`; downloads and checks the PawnIO files)
-3. `"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\pc-monitor-agent.iss`
+2. Put the Convex deployment URL in `installer\convex-url.txt` (one line, git-ignored; ask the
+   project owner). The build stops if it is missing or not a Convex URL.
+3. `powershell -File installer\fetch-pawnio.ps1` (needs `gh`; downloads and checks the PawnIO files)
+4. `"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\pc-monitor-agent.iss`
    (or `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe` for a per-user Inno Setup install)
-4. Same for `installer\pc-monitor-agent-uninstall.iss` → `dist\pc-monitor-agent-uninstall.exe`
+5. Same for `installer\pc-monitor-agent-uninstall.iss` → `dist\pc-monitor-agent-uninstall.exe`
 
 ## Known limits
 - Not code-signed (no budget for a certificate), so Windows SmartScreen shows

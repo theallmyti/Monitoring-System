@@ -6,10 +6,10 @@ which needs the read token (`read-token.secret`, git-ignored, never committed).
 ## Run locally
     cd dashboard
     npm install
-    VITE_CONVEX_URL=https://different-alpaca-219.convex.cloud npm run dev
+    VITE_CONVEX_URL=https://<dev-deployment>.convex.cloud npm run dev
 
 ## Build for the Pi
-    VITE_CONVEX_URL=https://tidy-newt-65.convex.cloud npm run build
+    VITE_CONVEX_URL=https://<prod-deployment>.convex.cloud npm run build
 The output is `dist/`, served as static files.
 
 ## Notes

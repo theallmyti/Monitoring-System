@@ -1,8 +1,8 @@
 ﻿# PC Monitor agent config.
 # Copy to config.toml (gitignored). The device secret is generated on first run.
 
-# Convex cloud endpoint for the team deployment (not secret).
-convex_url = "https://tidy-newt-65.convex.cloud"
+# Convex deployment URL. Ask the project owner; it is kept out of the repo.
+convex_url = "https://YOUR-DEPLOYMENT.convex.cloud"
 
 # Team registration secret. Ask the other team member privately; never commit it.
 # registration_secret = "paste-here"

@@ -38,30 +38,31 @@ Common verification commands:
 ## Phase 2: Accounts and pairing
 
 ### Task 4: Auth: sign up (scrypt) and sessions
-- [ ] `users`, `sessions` tables; `auth.signUp` hashes with scrypt in a Node action; min 8 chars (FR-01)
-- [ ] Returns a random 256-bit token; only its SHA-256 is stored (Security §4)
-- [ ] Tests: duplicate email rejected, password never stored in plain text
+- [x] `users`, `sessions` tables; `auth.signUp` hashes with scrypt in a Node action; min 8 chars (FR-01)
+- [x] Returns a random 256-bit token; only its SHA-256 is stored (Security §4)
+- [x] Tests: duplicate email rejected, password never stored in plain text
 - **Depends on:** Checkpoint A, open question 1 · **Size:** M
 
 ### Task 5: Auth: sign in with rate limit, sign out, session helper
-- [ ] `auth.signIn`: 5 attempts / 15 min per email (FR-04); same error for unknown email and wrong password
-- [ ] `auth.signOut` deletes the session; helper `requireUser(ctx, token)` enforces 30-day sliding expiry (FR-02, FR-03)
-- [ ] Tests for each rule (T-02, T-06)
+- [x] `auth.signIn`: 5 attempts / 15 min per email (FR-04); same error for unknown email and wrong password
+- [x] `auth.signOut` deletes the session; helper `requireUser(ctx, token)` enforces 30-day sliding expiry (FR-02, FR-03)
+- [x] Tests for each rule (T-02, T-06)
 - **Depends on:** 4 · **Size:** M
 
 ### Task 6: Pairing backend
-- [ ] `pairing.start` (agent: secret hash + device info → 6-char code, 10 min expiry), `pairing.confirm` (signed-in user), `pairing.status` (agent subscription)
-- [ ] Confirm creates the device with `userId`; expired codes rejected (FR-12, T-11)
+- [x] `pairing.start` (agent: secret hash + device info → 6-char code, 10 min expiry), `pairing.confirm` (signed-in user), `pairing.status` (agent subscription)
+- [x] Confirm creates the device with `userId`; expired codes rejected (FR-12, T-11)
 - **Depends on:** 5 · **Size:** M
 
 ### Task 7: Agent `pair` command with QR
-- [ ] `pc-monitor-agent pair` generates the secret, calls `pairing.start`, prints code + QR, waits for confirmation, saves config
-- [ ] Normal start without a paired device prints how to pair (Flow §11)
+- [x] `pc-monitor-agent pair` generates the secret, calls `pairing.start`, prints code + QR, waits for confirmation, saves config
+- [x] Normal start without a paired device prints how to pair (Flow §11)
 - **Depends on:** 6 · **Size:** S
 
 ### Task 8: Ownership everywhere; remove spike secrets
-- [ ] `devices.list/get/rename/remove/setViewer` require a session and check `device.userId` (T-12, T-13)
+- [x] `devices.list/get/rename/remove/setViewer` require a session and check `device.userId` (T-12, T-13)
 - [ ] Registration secret and dashboard read token removed; dashboard signs in like the app
+  - 4 Nov: read token removed, site signs in. `agent:register` (team secret) stays until the Pi runs the new agent and is paired.
 - [ ] Spike data purged (open question 3)
 - **Depends on:** 7, open questions 2–3 · **Size:** M
 
