@@ -1,16 +1,21 @@
 //! Log lines go to the terminal, or to a file when running as a Windows service (no console).
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::File;
+#[cfg(windows)]
+use std::fs::{self, OpenOptions};
 use std::io::Write;
+#[cfg(windows)]
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static FILE: OnceLock<Mutex<File>> = OnceLock::new();
 /// Start a fresh log when the old one passes this size (the previous one is kept as .old).
+#[cfg(windows)]
 const MAX_BYTES: u64 = 5 * 1024 * 1024;
 
-/// Send all further log lines to `path`.
+/// Send all further log lines to `path` (Windows service only; Linux logs to the terminal).
+#[cfg(windows)]
 pub fn to_file(path: &Path) -> std::io::Result<()> {
     if fs::metadata(path)
         .map(|m| m.len() > MAX_BYTES)

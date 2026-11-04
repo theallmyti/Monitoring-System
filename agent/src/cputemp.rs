@@ -7,6 +7,8 @@
 //! - IntelMSR: `ioctl_read_msr` (in: MSR, out: value)
 //!
 //! Without PawnIO (or on Linux) `CpuTemp::read` returns None and the agent stays in no-driver mode.
+//! The register decoding below is used by the Windows reader and tested on every platform.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 /// AMD Zen: THM_TCON_CUR_TMP register in SMN space.
 pub const AMD_SMN_TEMP: u64 = 0x0005_9800;
