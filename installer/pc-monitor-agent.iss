@@ -17,9 +17,16 @@
 #define AppVersion "0.2.0"
 #define ServiceName "PCMonitorAgent"
 ; The Convex URL is kept out of the repo: installer/convex-url.txt (git-ignored, one line).
-#define UrlFile AddBackslash(SourcePath) + "convex-url.txt"
+; Test builds: ISCC /DChannel=dev reads installer/convex-url-dev.txt and adds "-dev" to the name.
+#ifdef Channel
+  #define UrlFile AddBackslash(SourcePath) + "convex-url-" + Channel + ".txt"
+  #define OutSuffix "-" + Channel
+#else
+  #define UrlFile AddBackslash(SourcePath) + "convex-url.txt"
+  #define OutSuffix ""
+#endif
 #if !FileExists(UrlFile)
-  #error installer/convex-url.txt is missing. Put the Convex deployment URL in it (it is not committed).
+  #error The Convex URL file (installer/convex-url.txt, or convex-url-<channel>.txt) is missing. It is not committed.
 #endif
 #define UrlHandle FileOpen(UrlFile)
 #define ConvexUrl Trim(FileRead(UrlHandle))
@@ -42,7 +49,7 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=pc-monitor-agent-setup-{#AppVersion}
+OutputBaseFilename=pc-monitor-agent-setup-{#AppVersion}{#OutSuffix}
 Compression=lzma2
 SolidCompression=yes
 LicenseFile=..\LICENSE
@@ -131,15 +138,29 @@ begin
   Result := '';
 end;
 
-// The agent adds its device secret on first run. An upgrade keeps the existing file.
+// The agent adds its device secret on first run. An upgrade keeps the existing file (and so the
+// device secret) but points it at this build's backend; a computer moved to another backend is
+// then simply paired again on the next page.
 procedure WriteConfig();
+var
+  Lines: TArrayOfString;
+  I: Integer;
 begin
   ForceDirectories(DataDir());
   if not ConfigExists() then
+  begin
     SaveStringToFile(DataDir() + '\config.toml',
       '# PC Monitor agent config, written by the installer.' + #13#10 +
       'convex_url = "{#ConvexUrl}"' + #13#10 +
       'live_interval_secs = 1' + #13#10, False);
+    Exit;
+  end;
+  if not LoadStringsFromFile(DataDir() + '\config.toml', Lines) then
+    Exit;
+  for I := 0 to GetArrayLength(Lines) - 1 do
+    if Pos('convex_url', Trim(Lines[I])) = 1 then
+      Lines[I] := 'convex_url = "{#ConvexUrl}"';
+  SaveStringsToFile(DataDir() + '\config.toml', Lines, False);
 end;
 
 // Install PawnIO when asked and not already present; remember that we added it, so the

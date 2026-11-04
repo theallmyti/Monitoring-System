@@ -14,7 +14,9 @@ Builds `dist\pc-monitor-agent-setup-<version>.exe`, a normal Windows setup progr
   agent runs in no-driver mode (no CPU temperature).
 - Creates the `PCMonitorAgent` Windows service (LocalSystem, delayed auto-start), restarted
   5 s / 5 s / 60 s after a crash, and starts it. Log: `C:\ProgramData\PCMonitor\agent.log`.
-- Upgrade: keeps the config, stops the service, replaces files, starts it again.
+- Upgrade: keeps the config (and the device secret), points it at this build's Convex URL, stops
+  the service, replaces files, starts it again. A computer moved to another deployment (dev ↔ prod)
+  is paired again on the pairing page.
 
 ## Install location
 Any local fixed drive works (for example `E:\PC Monitor`). The folder only holds the program;
@@ -39,6 +41,9 @@ Settings → Apps, or `dist\pc-monitor-agent-uninstall.exe` (works for any insta
 4. `"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\pc-monitor-agent.iss`
    (or `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe` for a per-user Inno Setup install)
 5. Same for `installer\pc-monitor-agent-uninstall.iss` → `dist\pc-monitor-agent-uninstall.exe`
+6. Test build against the dev deployment: put the dev URL in `installer\convex-url-dev.txt` and run
+   `ISCC /DChannel=dev installer\pc-monitor-agent.iss` → `dist\pc-monitor-agent-setup-<version>-dev.exe`
+   (from PowerShell or cmd; Git Bash turns `/DChannel` into a path)
 
 ## Known limits
 - Not code-signed (no budget for a certificate), so Windows SmartScreen shows
