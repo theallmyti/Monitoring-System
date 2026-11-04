@@ -14,7 +14,7 @@
 ; removes PawnIO (silently if this installer added it, otherwise after asking), deletes all files.
 
 #define AppName "PC Monitor Agent"
-#define AppVersion "0.1.0"
+#define AppVersion "0.2.0"
 #define ServiceName "PCMonitorAgent"
 ; The Convex URL is kept out of the repo: installer/convex-url.txt (git-ignored, one line).
 #define UrlFile AddBackslash(SourcePath) + "convex-url.txt"

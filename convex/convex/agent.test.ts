@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
 
@@ -213,4 +213,68 @@ test("unpair removes the device, its live row and all history", async () => {
   expect(await t.run((ctx) => ctx.db.query("summaries").collect())).toHaveLength(0);
   // Running it again (uninstall twice) is harmless.
   expect(await t.mutation(api.agent.unpair, { secretHash: HASH })).toBe(false);
+});
+
+describe("pushSummaries (offline backlog)", () => {
+  const MIN = 60_000;
+  const minuteNow = () => Math.floor(Date.now() / MIN) * MIN;
+
+  test("files each minute by the server's clock, even when the PC's clock is a day ahead", async () => {
+    const { t } = await setup();
+    const agentNow = Date.now() + 24 * 3_600_000; // the PC's clock
+    const summaries = [2, 1, 0].map((ago) => ({ minuteTs: agentNow - ago * MIN, ...SUMMARY }));
+    expect(await t.mutation(api.agent.pushSummaries, { secretHash: HASH, sentAt: agentNow, summaries })).toEqual({
+      stored: 3,
+      skipped: 0,
+      tooSoon: false,
+    });
+    const rows = await t.run((ctx) => ctx.db.query("summaries").collect());
+    expect(rows.map((r) => r.minuteTs).sort()).toEqual([minuteNow() - 2 * MIN, minuteNow() - MIN, minuteNow()]);
+  });
+
+  test("a retried batch makes no duplicates; a call within 50 s is deferred, not an error", async () => {
+    const { t } = await setup();
+    const sentAt = Date.now();
+    const summaries = [1, 0].map((ago) => ({ minuteTs: sentAt - ago * MIN, ...SUMMARY }));
+    await t.mutation(api.agent.pushSummaries, { secretHash: HASH, sentAt, summaries });
+    expect(await t.mutation(api.agent.pushSummaries, { secretHash: HASH, sentAt, summaries })).toEqual({
+      stored: 0,
+      skipped: 0,
+      tooSoon: true,
+    });
+
+    // The answer was lost, so the agent sends the same minutes again a minute later.
+    vi.advanceTimersByTime(MIN);
+    await t.mutation(api.agent.pushSummaries, { secretHash: HASH, sentAt: sentAt + MIN, summaries });
+    const rows = await t.run((ctx) => ctx.db.query("summaries").collect());
+    expect(rows.map((r) => r.minuteTs).sort()).toEqual([minuteNow() - 2 * MIN, minuteNow() - MIN]);
+  });
+
+  test("skips impossible, future and too-old rows instead of failing the batch", async () => {
+    const { t } = await setup();
+    const now = Date.now();
+    const summaries = [
+      { minuteTs: now, ...SUMMARY },
+      { minuteTs: now - MIN, ...SUMMARY, cpuUtilMax: 140 }, // impossible
+      { minuteTs: now + 10 * MIN, ...SUMMARY }, // future
+      { minuteTs: now - 8 * 24 * 3_600_000, ...SUMMARY }, // older than the 7-day retention
+    ];
+    expect(await t.mutation(api.agent.pushSummaries, { secretHash: HASH, sentAt: now, summaries })).toEqual({
+      stored: 1,
+      skipped: 3,
+      tooSoon: false,
+    });
+  });
+
+  test("rejects empty or oversized batches and unknown devices", async () => {
+    const { t } = await setup();
+    const one = { minuteTs: Date.now(), ...SUMMARY };
+    await expect(t.mutation(api.agent.pushSummaries, { secretHash: HASH, sentAt: Date.now(), summaries: [] })).rejects.toThrow(/1 to 60/);
+    await expect(
+      t.mutation(api.agent.pushSummaries, { secretHash: HASH, sentAt: Date.now(), summaries: Array(61).fill(one) }),
+    ).rejects.toThrow(/1 to 60/);
+    await expect(
+      t.mutation(api.agent.pushSummaries, { secretHash: "b".repeat(64), sentAt: Date.now(), summaries: [one] }),
+    ).rejects.toThrow(/unknown device/);
+  });
 });

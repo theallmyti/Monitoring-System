@@ -9,6 +9,7 @@ import { mutation, query, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { deviceBySecretHash, removeDeviceData } from "./model";
 import { LATEST_AGENT_VERSION, isUnsupported } from "./versions";
+import { RETENTION_MS } from "./summaries";
 import { v, ConvexError, type Infer } from "convex/values";
 import { battery, capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
 
@@ -242,6 +243,59 @@ export const pushSummary = mutation({
     }
     await storeSummary(ctx, device._id, serverMinute(now), summary);
     await ctx.db.patch(device._id, { lastSeenAt: now, lastSummaryAt: now });
+  },
+});
+
+// Agents from 0.2.0: the summaries not sent yet, oldest first, in one call per minute. While a
+// computer is offline the agent keeps them (up to a day) and sends the backlog when it is back.
+// Times: the agent stamps each minute with its own clock and sends `sentAt` (its clock now); the
+// server shifts every minute by (server now - sentAt), so a wrong PC clock does not matter.
+// Rows that are impossible, in the future or older than the 7-day retention are skipped (counted)
+// instead of failing the batch, so one bad row cannot block the backlog. A minute that is already
+// stored is replaced, so a retried batch never makes duplicates.
+const MAX_BATCH = 60;
+
+export const pushSummaries = mutation({
+  args: {
+    secretHash: v.string(),
+    sentAt: v.number(),
+    summaries: v.array(v.object({ minuteTs: v.number(), ...summaryFields })),
+  },
+  handler: async (ctx, args) => {
+    if (args.summaries.length === 0 || args.summaries.length > MAX_BATCH) {
+      throw new ConvexError(`send 1 to ${MAX_BATCH} summaries per call`);
+    }
+    const device = await deviceBySecretHash(ctx, args.secretHash);
+    if (!device) {
+      throw new ConvexError("unknown device");
+    }
+    const now = Date.now();
+    // docs/Security.md §2: one call per 50 s. Not an error: the agent keeps the batch and retries.
+    if (device.lastSummaryAt !== undefined && now - device.lastSummaryAt < SUMMARY_MIN_GAP_MS) {
+      return { stored: 0, skipped: 0, tooSoon: true };
+    }
+    const offset = now - args.sentAt;
+    const newest = serverMinute(now);
+    const oldest = now - RETENTION_MS;
+    let stored = 0;
+    let skipped = 0;
+    for (const { minuteTs, ...summary } of args.summaries) {
+      const minute = serverMinute(minuteTs + offset);
+      try {
+        checkSummary(summary);
+      } catch {
+        skipped++;
+        continue;
+      }
+      if (minute > newest || minute < oldest) {
+        skipped++;
+        continue;
+      }
+      await storeSummary(ctx, device._id, minute, summary);
+      stored++;
+    }
+    await ctx.db.patch(device._id, { lastSeenAt: now, lastSummaryAt: now });
+    return { stored, skipped, tooSoon: false };
   },
 });
 

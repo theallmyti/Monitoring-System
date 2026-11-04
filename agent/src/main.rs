@@ -6,6 +6,7 @@
 #[macro_use]
 mod logging;
 mod aggregator;
+mod backlog;
 mod battery;
 mod collectors;
 mod config;
@@ -24,6 +25,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use aggregator::{Aggregator, Sample, Summary};
+use backlog::Backlog;
 use collectors::{Drive, Proc};
 use convex::{ConvexClient, FunctionResult, Value};
 use futures::StreamExt;
@@ -34,6 +36,9 @@ use tokio::sync::Notify;
 const SUMMARY_EVERY: Duration = Duration::from_secs(60);
 /// A push that takes longer than this is dropped so sampling keeps going.
 const PUSH_TIMEOUT: Duration = Duration::from_secs(5);
+/// Offline buffering: keep up to a day of unsent summaries, send at most 60 per call.
+const BACKLOG_MAX: usize = 24 * 60;
+const BATCH_MAX: usize = 60;
 /// Live view refresh intervals for the slower readings, in seconds (ticks).
 const PROCESS_EVERY: u64 = 5;
 const DRIVES_EVERY: u64 = 10;
@@ -187,15 +192,10 @@ fn capabilities_value(
     Value::Object(o)
 }
 
-/// Arguments for `agent:pushSummary`. Optional readings are left out when absent.
-fn summary_args(
-    secret_hash: &str,
-    minute_ts: u64,
-    s: &Summary,
-    drives: &[Drive],
-) -> BTreeMap<String, Value> {
+/// One minute's summary for `agent:pushSummaries`, stamped with this computer's clock (the
+/// server corrects it). Optional readings are left out when absent.
+fn summary_value(minute_ts: u64, s: &Summary, drives: &[Drive]) -> Value {
     let mut a = BTreeMap::new();
-    a.insert("secretHash".to_string(), text(secret_hash));
     a.insert("minuteTs".to_string(), num(minute_ts as f64));
     a.insert("cpuUtilAvg".to_string(), num(s.cpu_util_avg));
     a.insert("cpuUtilMax".to_string(), num(s.cpu_util_max));
@@ -216,7 +216,51 @@ fn summary_args(
     if !drives.is_empty() {
         a.insert("disks".to_string(), drives_summary(drives));
     }
-    a
+    Value::Object(a)
+}
+
+/// A count in a Convex answer (numbers arrive as Float64, or Int64 for bigints).
+fn count(v: Option<&Value>) -> u64 {
+    match v {
+        Some(Value::Float64(f)) => *f as u64,
+        Some(Value::Int64(i)) => (*i).max(0) as u64,
+        _ => 0,
+    }
+}
+
+/// Send the oldest waiting summaries. On failure they stay in the backlog for the next minute.
+async fn send_backlog(client: &mut ConvexClient, secret_hash: &str, backlog: &mut Backlog<Value>) {
+    let batch = backlog.batch(BATCH_MAX);
+    let n = batch.len();
+    let mut args = BTreeMap::new();
+    args.insert("secretHash".to_string(), text(secret_hash));
+    args.insert("sentAt".to_string(), num(now_ms() as f64));
+    args.insert("summaries".to_string(), Value::Array(batch));
+    let Some(Value::Object(answer)) = call(client, "agent:pushSummaries", args).await else {
+        if backlog.len() > 1 {
+            say!(
+                "{} summaries kept until the connection is back",
+                backlog.len()
+            );
+        }
+        return;
+    };
+    // Sent within 50 s of the previous call (e.g. right after a restart): retry next minute.
+    if answer.get("tooSoon") == Some(&Value::Boolean(true)) {
+        return;
+    }
+    backlog.confirm(n);
+    let skipped = count(answer.get("skipped"));
+    if skipped > 0 {
+        warn!("{skipped} summaries were refused (impossible values or too old)");
+    }
+    if n > 1 {
+        say!(
+            "sent {n} buffered summaries ({} stored, {} still waiting)",
+            count(answer.get("stored")),
+            backlog.len()
+        );
+    }
 }
 
 /// Run a mutation with a timeout; log failures. Returns the result on success.
@@ -486,6 +530,7 @@ pub async fn run(path: PathBuf, stop: Arc<Notify>) {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     let mut aggregator = Aggregator::default();
+    let mut backlog: Backlog<Value> = Backlog::new(BACKLOG_MAX);
     // First summary after 10 s, so a newly paired computer shows data at once; then every 60 s.
     let mut next_summary = Instant::now() + Duration::from_secs(10);
     let mut was_live = false;
@@ -632,25 +677,22 @@ pub async fn run(path: PathBuf, stop: Arc<Notify>) {
             top.clear();
         }
 
-        // Summary: every 60 s, always (FR-30).
+        // Summary: every 60 s, always (FR-30). Queued first, so nothing is lost while offline.
         if summary_due {
             next_summary += SUMMARY_EVERY;
             if let Some(s) = aggregator.take() {
-                let minute_ts = now / 60_000 * 60_000;
-                if push(
-                    &mut client,
-                    "agent:pushSummary",
-                    summary_args(&secret_hash, minute_ts, &s, &drives),
-                )
-                .await
-                {
-                    say!(
-                        "summary cpu avg {:.1}% max {:.1}% ram avg {:.1}%",
-                        s.cpu_util_avg,
-                        s.cpu_util_max,
-                        s.ram_pct_avg
-                    );
+                say!(
+                    "summary cpu avg {:.1}% max {:.1}% ram avg {:.1}%",
+                    s.cpu_util_avg,
+                    s.cpu_util_max,
+                    s.ram_pct_avg
+                );
+                if backlog.push(summary_value(now / 60_000 * 60_000, &s, &drives)) {
+                    warn!("offline for over a day: dropped the oldest waiting summary");
                 }
+            }
+            if !backlog.is_empty() {
+                send_backlog(&mut client, &secret_hash, &mut backlog).await;
             }
         }
     }
