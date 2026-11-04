@@ -5,9 +5,10 @@
 //  - pushLatest, pushSummary, watchViewer: the agent sends SHA-256(device secret);
 //    Convex compares the hash (docs/Flow.md §3, docs/Security.md §6).
 // No public read endpoint: the app reads through pairing in week 2.
-import { mutation, query } from "./_generated/server";
+import { mutation, query, type MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { deviceBySecretHash, removeDeviceData } from "./model";
-import { v, ConvexError } from "convex/values";
+import { v, ConvexError, type Infer } from "convex/values";
 import { battery, capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
 
 // docs/Security.md §2: at most one summary per 50 s per device.
@@ -157,42 +158,71 @@ export const pushLatest = mutation({
   },
 });
 
+const MINUTE_MS = 60_000;
+
+// The minute a summary belongs to, by the server's clock: a PC with a wrong clock must not put
+// its history in the wrong place, or out of reach of the 7-day cleanup (docs/Security.md §2).
+export function serverMinute(now: number) {
+  return Math.floor(now / MINUTE_MS) * MINUTE_MS;
+}
+
+const summaryFields = {
+  cpuUtilAvg: v.number(),
+  cpuUtilMax: v.number(),
+  ramPctAvg: v.number(),
+  ramPctMax: v.number(),
+  cpuTempAvg: v.optional(v.number()),
+  cpuTempMax: v.optional(v.number()),
+  gpuTempMax: v.optional(v.number()),
+  gpuUtilAvg: v.optional(v.number()),
+  disks: v.optional(v.array(driveSummary)),
+  batteryPct: v.optional(v.number()),
+};
+const summaryValidator = v.object(summaryFields);
+type SummaryFields = Infer<typeof summaryValidator>;
+
+// FR-28: reject impossible values.
+function checkSummary(summary: SummaryFields) {
+  if (summary.disks?.some((d) => d.freeGB < 0 || d.freePct < 0 || d.freePct > 100)) {
+    throw new ConvexError("disk value out of range");
+  }
+  const percents = [
+    summary.cpuUtilAvg,
+    summary.cpuUtilMax,
+    summary.ramPctAvg,
+    summary.ramPctMax,
+    summary.gpuUtilAvg,
+    summary.batteryPct,
+  ];
+  const temps = [summary.cpuTempAvg, summary.cpuTempMax, summary.gpuTempMax];
+  if (
+    percents.some((p) => p !== undefined && (p < 0 || p > 100)) ||
+    temps.some((t) => t !== undefined && (t < 0 || t > 125))
+  ) {
+    throw new ConvexError("value out of range");
+  }
+}
+
+// One row per device and minute: a second summary for the same minute replaces the first, so a
+// retried send never makes a duplicate (idempotent).
+async function storeSummary(ctx: MutationCtx, deviceId: Id<"devices">, minuteTs: number, summary: SummaryFields) {
+  const existing = await ctx.db
+    .query("summaries")
+    .withIndex("by_device_time", (q) => q.eq("deviceId", deviceId).eq("minuteTs", minuteTs))
+    .first();
+  if (existing) {
+    await ctx.db.replace(existing._id, { deviceId, minuteTs, ...summary });
+  } else {
+    await ctx.db.insert("summaries", { deviceId, minuteTs, ...summary });
+  }
+}
+
 // Every 60 s, always: the minute's averages and peaks (docs/Architecture.md §2.2, FR-30).
+// `minuteTs` from the agent is ignored (its clock may be wrong); kept so older agents still work.
 export const pushSummary = mutation({
-  args: {
-    secretHash: v.string(),
-    minuteTs: v.number(),
-    cpuUtilAvg: v.number(),
-    cpuUtilMax: v.number(),
-    ramPctAvg: v.number(),
-    ramPctMax: v.number(),
-    cpuTempAvg: v.optional(v.number()),
-    cpuTempMax: v.optional(v.number()),
-    gpuTempMax: v.optional(v.number()),
-    gpuUtilAvg: v.optional(v.number()),
-    disks: v.optional(v.array(driveSummary)),
-    batteryPct: v.optional(v.number()),
-  },
-  handler: async (ctx, { secretHash, ...summary }) => {
-    if (summary.disks?.some((d) => d.freeGB < 0 || d.freePct < 0 || d.freePct > 100)) {
-      throw new ConvexError("disk value out of range");
-    }
-    // FR-28: reject impossible values.
-    const percents = [
-      summary.cpuUtilAvg,
-      summary.cpuUtilMax,
-      summary.ramPctAvg,
-      summary.ramPctMax,
-      summary.gpuUtilAvg,
-      summary.batteryPct,
-    ];
-    const temps = [summary.cpuTempAvg, summary.cpuTempMax, summary.gpuTempMax];
-    if (
-      percents.some((p) => p !== undefined && (p < 0 || p > 100)) ||
-      temps.some((t) => t !== undefined && (t < 0 || t > 125))
-    ) {
-      throw new ConvexError("value out of range");
-    }
+  args: { secretHash: v.string(), minuteTs: v.number(), ...summaryFields },
+  handler: async (ctx, { secretHash, minuteTs: _agentMinute, ...summary }) => {
+    checkSummary(summary);
     const device = await deviceBySecretHash(ctx, secretHash);
     if (!device) {
       throw new ConvexError("unknown device");
@@ -201,7 +231,7 @@ export const pushSummary = mutation({
     if (device.lastSummaryAt !== undefined && now - device.lastSummaryAt < SUMMARY_MIN_GAP_MS) {
       throw new ConvexError("summary sent too soon");
     }
-    await ctx.db.insert("summaries", { deviceId: device._id, ...summary });
+    await storeSummary(ctx, device._id, serverMinute(now), summary);
     await ctx.db.patch(device._id, { lastSeenAt: now, lastSummaryAt: now });
   },
 });

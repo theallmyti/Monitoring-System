@@ -48,10 +48,29 @@ test("pushSummary accepts at most one summary per 50 s", async () => {
     t.mutation(api.agent.pushSummary, { secretHash: HASH, minuteTs: 2, ...SUMMARY }),
   ).rejects.toThrow(/too soon/);
 
-  vi.advanceTimersByTime(50_000);
+  vi.advanceTimersByTime(60_000); // next minute, past the 50 s gap
   await t.mutation(api.agent.pushSummary, { secretHash: HASH, minuteTs: 3, ...SUMMARY });
   const rows = await t.run((ctx) => ctx.db.query("summaries").collect());
   expect(rows).toHaveLength(2);
+});
+
+test("pushSummary files the minute by the server's clock, not the PC's", async () => {
+  const { t } = await setup();
+  const dayAhead = Date.now() + 24 * 3_600_000;
+  await t.mutation(api.agent.pushSummary, { secretHash: HASH, minuteTs: dayAhead, ...SUMMARY });
+  const [row] = await t.run((ctx) => ctx.db.query("summaries").collect());
+  expect(row.minuteTs).toBe(Math.floor(Date.now() / 60_000) * 60_000);
+});
+
+test("a second summary in the same server minute replaces the first (no duplicates)", async () => {
+  vi.setSystemTime(new Date("2026-11-03T10:00:05Z"));
+  const { t } = await setup();
+  await t.mutation(api.agent.pushSummary, { secretHash: HASH, minuteTs: 0, ...SUMMARY });
+  vi.advanceTimersByTime(52_000); // 10:00:57, still the same minute
+  await t.mutation(api.agent.pushSummary, { secretHash: HASH, minuteTs: 0, ...SUMMARY, cpuUtilMax: 90 });
+  const rows = await t.run((ctx) => ctx.db.query("summaries").collect());
+  expect(rows).toHaveLength(1);
+  expect(rows[0].cpuUtilMax).toBe(90);
 });
 
 test("pushSummary rejects impossible values and unknown devices", async () => {
