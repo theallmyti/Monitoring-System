@@ -12,11 +12,14 @@ export interface Device {
   name: string;
   lastSeenAt: number;
   online: boolean;
+  agentVersion: string | null;
+  updateAvailable: boolean;
   latest: Latest | null;
 }
 
 export interface Overview {
   now: number;
+  latestAgentVersion: string;
   devices: Device[];
 }
 

@@ -21,6 +21,7 @@ import type * as rateLimit from "../rateLimit.js";
 import type * as summaries from "../summaries.js";
 import type * as users from "../users.js";
 import type * as validators from "../validators.js";
+import type * as versions from "../versions.js";
 
 import type {
   ApiFromModules,
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   summaries: typeof summaries;
   users: typeof users;
   validators: typeof validators;
+  versions: typeof versions;
 }>;
 
 /**

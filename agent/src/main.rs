@@ -219,30 +219,57 @@ fn summary_args(
     a
 }
 
-/// Run a mutation with a timeout; log failures. Returns true on success.
-async fn push(client: &mut ConvexClient, name: &str, args: BTreeMap<String, Value>) -> bool {
+/// Run a mutation with a timeout; log failures. Returns the result on success.
+async fn call(
+    client: &mut ConvexClient,
+    name: &str,
+    args: BTreeMap<String, Value>,
+) -> Option<Value> {
     match tokio::time::timeout(PUSH_TIMEOUT, client.mutation(name, args)).await {
-        Ok(Ok(FunctionResult::Value(_))) => true,
+        Ok(Ok(FunctionResult::Value(v))) => Some(v),
         Ok(Ok(FunctionResult::ErrorMessage(msg))) => {
             warn!("{name}: {msg}");
-            false
+            None
         }
         Ok(Ok(FunctionResult::ConvexError(err))) => {
             warn!("{name}: {err:?}");
-            false
+            None
         }
         Ok(Err(e)) => {
             warn!("{name} failed: {e}");
-            false
+            None
         }
         Err(_) => {
             warn!(
                 "{name}: no answer within {}s (offline?)",
                 PUSH_TIMEOUT.as_secs()
             );
-            false
+            None
         }
     }
+}
+
+/// Like `call`, when only success matters.
+async fn push(client: &mut ConvexClient, name: &str, args: BTreeMap<String, Value>) -> bool {
+    call(client, name, args).await.is_some()
+}
+
+/// "x.y.z" as numbers; missing or non-numeric parts count as 0.
+fn version_parts(v: &str) -> [u64; 3] {
+    let mut out = [0; 3];
+    for (slot, part) in out.iter_mut().zip(v.split('.')) {
+        *slot = part.trim().parse().unwrap_or(0);
+    }
+    out
+}
+
+/// The newer release named in `agent:hello`'s answer, if it is newer than this agent.
+fn newer_version(hello: &Value, own: &str) -> Option<String> {
+    let Value::Object(o) = hello else { return None };
+    let Some(Value::String(latest)) = o.get("latestVersion") else {
+        return None;
+    };
+    (version_parts(latest) > version_parts(own)).then(|| latest.clone())
 }
 
 /// First connection, retried with backoff 1 s → 60 s (docs/CHANGELOG.md decisions).
@@ -428,14 +455,25 @@ pub async fn run(path: PathBuf, stop: Arc<Notify>) {
         ),
     );
     hello_args.insert("agentVersion".to_string(), text(env!("CARGO_PKG_VERSION")));
-    while !push(&mut client, "agent:hello", hello_args.clone()).await {
-        say!("not paired yet: run `pc-monitor-agent pair`; retrying in 60 s");
+    let hello = loop {
+        if let Some(answer) = call(&mut client, "agent:hello", hello_args.clone()).await {
+            break answer;
+        }
+        say!(
+            "not connected yet (see above; if not paired, run `pc-monitor-agent pair`); retrying in 60 s"
+        );
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_secs(60)) => {}
             _ = stop.notified() => return,
         }
-    }
+    };
     say!("connected as a paired device");
+    let own_version = env!("CARGO_PKG_VERSION");
+    if let Some(latest) = newer_version(&hello, own_version) {
+        say!(
+            "update available: version {latest} (this is {own_version});              get it from https://github.com/theallmyti/Monitoring-System/releases"
+        );
+    }
 
     let viewer_until = Arc::new(AtomicU64::new(0));
     watch_viewer(client.clone(), secret_hash.clone(), viewer_until.clone());
@@ -615,5 +653,31 @@ pub async fn run(path: PathBuf, stop: Arc<Notify>) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hello_answer(latest: &str) -> Value {
+        let mut o = BTreeMap::new();
+        o.insert("latestVersion".to_string(), text(latest));
+        Value::Object(o)
+    }
+
+    #[test]
+    fn newer_version_compares_numbers_not_text() {
+        assert_eq!(
+            newer_version(&hello_answer("0.10.0"), "0.9.0").as_deref(),
+            Some("0.10.0")
+        );
+        assert_eq!(newer_version(&hello_answer("0.1.0"), "0.1.0"), None);
+        assert_eq!(newer_version(&hello_answer("0.1.0"), "0.2.0"), None);
+        // Older backends do not send latestVersion.
+        assert_eq!(
+            newer_version(&Value::Object(BTreeMap::new()), "0.1.0"),
+            None
+        );
     }
 }

@@ -54,7 +54,7 @@ test("the signed-in user who confirms becomes the owner; then hello reports owne
   expect(device?.userId).toBe(user._id);
   expect(device?.isFake).toBe(false);
 
-  expect(await t.mutation(api.agent.hello, { secretHash: HASH, agentVersion: "0.1.0" })).toEqual({
+  expect(await t.mutation(api.agent.hello, { secretHash: HASH, agentVersion: "0.1.0" })).toMatchObject({
     deviceId,
     owned: true,
   });
@@ -66,12 +66,12 @@ test("a device paired before accounts (no owner) is claimed by pairing it again"
   const oldId = await t.run((ctx) =>
     ctx.db.insert("devices", { name: "old-pc", secretHash: HASH, lastSeenAt: 0, isFake: false }),
   );
-  expect(await t.mutation(api.agent.hello, { secretHash: HASH })).toEqual({ deviceId: oldId, owned: false });
+  expect(await t.mutation(api.agent.hello, { secretHash: HASH })).toMatchObject({ deviceId: oldId, owned: false });
 
   const { code } = await t.mutation(api.pairing.start, DEVICE);
   const { deviceId } = (await t.mutation(api.dashboard.confirmPairing, { token, code }))!;
   expect(deviceId).toBe(oldId); // same device, history kept
-  expect(await t.mutation(api.agent.hello, { secretHash: HASH })).toEqual({ deviceId: oldId, owned: true });
+  expect(await t.mutation(api.agent.hello, { secretHash: HASH })).toMatchObject({ deviceId: oldId, owned: true });
 });
 
 test("an expired code cannot be confirmed", async () => {

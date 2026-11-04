@@ -3,6 +3,7 @@
 import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { LIMITS, isLimited, recordEvent } from "./rateLimit";
+import { LATEST_AGENT_VERSION, isOutdated } from "./versions";
 import {
   deviceBySecretHash,
   ownedDevice,
@@ -38,10 +39,12 @@ export const overview = query({
         name: d.name,
         lastSeenAt: d.lastSeenAt,
         online: now - d.lastSeenAt < OFFLINE_AFTER_MS,
+        agentVersion: d.agentVersion ?? null,
+        updateAvailable: isOutdated(d.agentVersion),
         latest: latest ?? null,
       });
     }
-    return { now, devices: out };
+    return { now, latestAgentVersion: LATEST_AGENT_VERSION, devices: out };
   },
 });
 

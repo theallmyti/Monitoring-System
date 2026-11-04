@@ -8,6 +8,7 @@
 import { mutation, query, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { deviceBySecretHash, removeDeviceData } from "./model";
+import { LATEST_AGENT_VERSION, isUnsupported } from "./versions";
 import { v, ConvexError, type Infer } from "convex/values";
 import { battery, capabilities, driveLive, driveSummary, ramDetail, topProc } from "./validators";
 
@@ -24,6 +25,11 @@ export const hello = mutation({
     agentVersion: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (isUnsupported(args.agentVersion)) {
+      throw new ConvexError(
+        `This agent (${args.agentVersion}) is too old. Install version ${LATEST_AGENT_VERSION} from PC Monitor's releases.`,
+      );
+    }
     const device = await deviceBySecretHash(ctx, args.secretHash);
     if (!device) {
       throw new ConvexError("not paired");
@@ -35,7 +41,8 @@ export const hello = mutation({
     });
     // owned = linked to an account. Devices paired before accounts existed have no owner and
     // are shown to nobody until they are paired again (docs/Security.md §2).
-    return { deviceId: device._id, owned: device.userId !== undefined };
+    // latestVersion: the agent logs when a newer release exists (versions.ts).
+    return { deviceId: device._id, owned: device.userId !== undefined, latestVersion: LATEST_AGENT_VERSION };
   },
 });
 

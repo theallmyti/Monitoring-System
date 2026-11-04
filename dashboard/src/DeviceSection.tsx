@@ -41,6 +41,15 @@ export function DeviceSection({ device, token, range }: { device: Device; token:
           <p className="status">
             <span className={`dot ${device.online ? "on" : "off"}`} aria-hidden="true" />
             {device.online ? "Online" : "Offline"} · last update {age}
+            {device.agentVersion && ` · agent ${device.agentVersion}`}
+            {device.updateAvailable && (
+              <>
+                {" · "}
+                <a href="https://github.com/theallmyti/Monitoring-System/releases" target="_blank" rel="noreferrer">
+                  update available
+                </a>
+              </>
+            )}
           </p>
         </div>
         <button
