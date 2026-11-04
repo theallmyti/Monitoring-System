@@ -8,6 +8,7 @@
 //!
 //! Configured speed is what the RAM actually runs at (it can be below the rated speed).
 //! Linux needs root for the SMBIOS table, so the Pi does not report it.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 const RAW_HEADER: usize = 8; // RawSMBIOSData: 4 version bytes + table length (DWORD)
 const TYPE_MEMORY_DEVICE: u8 = 17;
