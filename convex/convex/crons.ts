@@ -7,4 +7,7 @@ const crons = cronJobs();
 // FR-50: keep 7 days of summaries.
 crons.daily("delete old summaries", { hourUTC: 21, minuteUTC: 30 }, internal.summaries.deleteOld, {});
 
+// Rate-limit events, failed sign-ins and expired pairing codes (cleanup.ts).
+crons.daily("delete expired rows", { hourUTC: 21, minuteUTC: 45 }, internal.cleanup.deleteExpired, {});
+
 export default crons;

@@ -6,7 +6,7 @@ import { internal } from "./_generated/api";
 import { v, ConvexError } from "convex/values";
 import { dummyHash, hashPassword, newToken, tokenHash, verifyPassword } from "./passwords";
 import { sessionUser } from "./model";
-import { MAX_ATTEMPTS } from "./users";
+import { MAX_ATTEMPTS, SIGNUP_LIMITED } from "./users";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 8; // FR-01
@@ -24,6 +24,9 @@ export const signUp = action({
     }
     if (args.password.length < MIN_PASSWORD) {
       throw new ConvexError(`Use at least ${MIN_PASSWORD} characters for the password.`);
+    }
+    if (await ctx.runQuery(internal.users.signupLimited, {})) {
+      throw new ConvexError(SIGNUP_LIMITED);
     }
     const userId = await ctx.runMutation(internal.users.create, {
       email,

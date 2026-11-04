@@ -26,7 +26,17 @@ export default defineSchema({
   loginAttempts: defineTable({
     email: v.string(),
     at: v.number(),
-  }).index("by_email_at", ["email", "at"]),
+  })
+    .index("by_email_at", ["email", "at"])
+    .index("by_at", ["at"]),
+
+  // Other rate limits (rateLimit.ts): sign-ups, pairing codes, wrong codes. Deleted after a day.
+  rateEvents: defineTable({
+    key: v.string(), // e.g. "signup", "pair:<secretHash>", "wrongCode:<userId>"
+    at: v.number(),
+  })
+    .index("by_key_at", ["key", "at"])
+    .index("by_at", ["at"]),
 
   devices: defineTable({
     // Owner, set when a signed-in user confirms pairing. Every read checks it (docs/Security.md §2).
@@ -57,7 +67,8 @@ export default defineSchema({
     expiresAt: v.number(),
   })
     .index("by_code", ["code"])
-    .index("by_secretHash", ["secretHash"]),
+    .index("by_secretHash", ["secretHash"])
+    .index("by_expires", ["expiresAt"]),
 
   latest: defineTable({
     deviceId: v.id("devices"),

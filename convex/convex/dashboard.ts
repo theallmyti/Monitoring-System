@@ -2,6 +2,7 @@
 // touches the caller's own devices (docs/Security.md §2, FR-13, FR-14, T-12).
 import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
+import { LIMITS, isLimited, recordEvent } from "./rateLimit";
 import {
   deviceBySecretHash,
   ownedDevice,
@@ -92,12 +93,23 @@ export const removeDevice = mutation({
 });
 
 // Pairing: show which computer is asking before confirming (docs/Security.md §2).
-export const pairingInfo = query({
+const TOO_MANY_WRONG = "Too many wrong codes. Wait 10 minutes and try again.";
+
+// Looks up a pairing code before confirming, so the user sees which computer it is.
+// A mutation, not a query, so wrong codes can be counted: 10 per 10 minutes per account stops
+// guessing someone else's open code (docs/Security.md §2). Not found returns null (a thrown
+// error would roll back the count).
+export const checkPairingCode = mutation({
   args: { token: v.string(), code: v.string() },
   handler: async (ctx, args) => {
-    await requireUser(ctx, args.token);
+    const user = await requireUser(ctx, args.token);
+    const key = `wrongCode:${user._id}`;
+    if (await isLimited(ctx, key, LIMITS.wrongCode)) {
+      throw new ConvexError(TOO_MANY_WRONG);
+    }
     const r = await pairingByCode(ctx, args.code);
     if (!r) {
+      await recordEvent(ctx, key);
       return null;
     }
     return { name: r.name, os: r.os, state: pairingState(r, Date.now()) };
@@ -110,8 +122,16 @@ export const confirmPairing = mutation({
   args: { token: v.string(), code: v.string() },
   handler: async (ctx, args) => {
     const user = await requireUserAndTouch(ctx, args.token);
+    const key = `wrongCode:${user._id}`;
+    if (await isLimited(ctx, key, LIMITS.wrongCode)) {
+      throw new ConvexError(TOO_MANY_WRONG);
+    }
     const r = await pairingByCode(ctx, args.code);
-    if (!r || pairingState(r, Date.now()) !== "pending") {
+    if (!r) {
+      await recordEvent(ctx, key);
+      return null; // not found (counted as a wrong code)
+    }
+    if (pairingState(r, Date.now()) !== "pending") {
       throw new ConvexError("code not found or expired");
     }
     const now = Date.now();

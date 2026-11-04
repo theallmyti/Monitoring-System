@@ -17,7 +17,7 @@ afterEach(() => vi.useRealTimers());
 async function userWithDevice(t: ReturnType<typeof convexTest>, email: string, hash: string) {
   const { token } = await t.action(api.auth.signUp, { email, password: "password one" });
   const { code } = await t.mutation(api.pairing.start, { secretHash: hash, name: email, os: "windows" });
-  const { deviceId } = await t.mutation(api.dashboard.confirmPairing, { token, code });
+  const { deviceId } = (await t.mutation(api.dashboard.confirmPairing, { token, code }))!;
   return { token, deviceId: deviceId as Id<"devices"> };
 }
 

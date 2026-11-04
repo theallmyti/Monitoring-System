@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
+import { ConvexError } from "convex/values";
 import { anyApi } from "convex/server";
 import jsQR from "jsqr";
 
 // Pair a computer by scanning the QR code its installer shows (docs/Flow.md §3), or typing the code.
-// Test phase: confirmed with the dashboard read token until sign-in exists (Task 8).
+// The signed-in user who confirms becomes the owner.
 
 const QR_PREFIX = "PCMONITOR-PAIR:";
 const CODE_PATTERN = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/;
+
+type PairingInfo = { name: string; os: string; state: "pending" | "confirmed" | "expired" };
 
 function normalize(input: string) {
   return input.replace(QR_PREFIX, "").replace(/[\s-]/g, "").toUpperCase();
@@ -20,10 +23,25 @@ export function PairScreen({ token, initialCode, onDone }: { token: string; init
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const confirm = useMutation(anyApi.dashboard.confirmPairing);
-  const info = useQuery(anyApi.dashboard.pairingInfo, code ? { token, code } : "skip") as
-    | { name: string; os: string; state: "pending" | "confirmed" | "expired" }
-    | null
-    | undefined;
+  const check = useMutation(anyApi.dashboard.checkPairingCode);
+  // undefined: checking; null: not found. Checked once per code (wrong codes are counted).
+  const [info, setInfo] = useState<PairingInfo | null | undefined>(undefined);
+  useEffect(() => {
+    if (!code) return;
+    let current = true;
+    setInfo(undefined);
+    setError(null);
+    check({ token, code })
+      .then((r) => current && setInfo(r as PairingInfo | null))
+      .catch((e) => {
+        if (!current) return;
+        setInfo(null);
+        setError(e instanceof ConvexError && typeof e.data === "string" ? e.data : null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [code, token, check]);
 
   if (result) {
     return (
@@ -44,7 +62,7 @@ export function PairScreen({ token, initialCode, onDone }: { token: string; init
         <div className="login">
           <h1>Pair device</h1>
           {info === undefined && <p className="muted">Checking code {code}…</p>}
-          {info === null && <p className="err">Code {code} was not found. Check the code on the computer.</p>}
+          {info === null && !error && <p className="err">Code {code} was not found. Check the code on the computer.</p>}
           {info && info.state === "expired" && <p className="err">This code has expired. Run pairing again on the computer.</p>}
           {info && info.state === "confirmed" && <p>This code was already used.</p>}
           {info && info.state === "pending" && (
@@ -66,10 +84,15 @@ export function PairScreen({ token, initialCode, onDone }: { token: string; init
                   setBusy(true);
                   setError(null);
                   try {
-                    const r = (await confirm({ token, code })) as { name: string };
-                    setResult(r.name);
-                  } catch {
-                    setError("Pairing failed. The code may have expired; run pairing again on the computer.");
+                    const r = (await confirm({ token, code })) as { name: string } | null;
+                    if (r) setResult(r.name);
+                    else setError("Pairing failed. The code may have expired; run pairing again on the computer.");
+                  } catch (e) {
+                    setError(
+                      e instanceof ConvexError && typeof e.data === "string" && e.data.startsWith("Too many")
+                        ? e.data
+                        : "Pairing failed. The code may have expired; run pairing again on the computer.",
+                    );
                   } finally {
                     setBusy(false);
                   }

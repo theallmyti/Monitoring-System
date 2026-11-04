@@ -44,10 +44,10 @@ test("the signed-in user who confirms becomes the owner; then hello reports owne
   await expect(t.mutation(api.agent.hello, { secretHash: HASH })).rejects.toThrow(/not paired/);
 
   const { code } = await t.mutation(api.pairing.start, DEVICE);
-  const info = await t.query(api.dashboard.pairingInfo, { token, code: code.toLowerCase() });
+  const info = await t.mutation(api.dashboard.checkPairingCode, { token, code: code.toLowerCase() });
   expect(info).toEqual({ name: "test-pc", os: "windows", state: "pending" });
 
-  const { deviceId } = await t.mutation(api.dashboard.confirmPairing, { token, code });
+  const { deviceId } = (await t.mutation(api.dashboard.confirmPairing, { token, code }))!;
   expect(await t.query(api.pairing.status, { code, secretHash: HASH })).toBe("confirmed");
   const device = await t.run((ctx) => ctx.db.get(deviceId));
   const [user] = await t.run((ctx) => ctx.db.query("users").collect());
@@ -69,7 +69,7 @@ test("a device paired before accounts (no owner) is claimed by pairing it again"
   expect(await t.mutation(api.agent.hello, { secretHash: HASH })).toEqual({ deviceId: oldId, owned: false });
 
   const { code } = await t.mutation(api.pairing.start, DEVICE);
-  const { deviceId } = await t.mutation(api.dashboard.confirmPairing, { token, code });
+  const { deviceId } = (await t.mutation(api.dashboard.confirmPairing, { token, code }))!;
   expect(deviceId).toBe(oldId); // same device, history kept
   expect(await t.mutation(api.agent.hello, { secretHash: HASH })).toEqual({ deviceId: oldId, owned: true });
 });

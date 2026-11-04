@@ -4,6 +4,7 @@
 import { mutation, query } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { normalizeCode, pairingByCode, pairingState } from "./model";
+import { LIMITS, isLimited, recordEvent } from "./rateLimit";
 
 // No 0/O, 1/I: easy to read off a screen. 32 symbols, so a random byte maps without bias.
 const ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -22,6 +23,12 @@ export const start = mutation({
     if (!/^[0-9a-f]{64}$/.test(args.secretHash)) {
       throw new ConvexError("invalid device key");
     }
+    const deviceKey = `pair:${args.secretHash}`;
+    if ((await isLimited(ctx, deviceKey, LIMITS.pairPerDevice)) || (await isLimited(ctx, "pair", LIMITS.pairGlobal))) {
+      throw new ConvexError("Too many pairing codes. Wait a few minutes and try again.");
+    }
+    await recordEvent(ctx, deviceKey);
+    await recordEvent(ctx, "pair");
     // One open request per device: a new run of `pair` replaces the old code.
     const old = await ctx.db
       .query("pairingRequests")

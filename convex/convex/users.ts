@@ -1,6 +1,9 @@
 // Internal account steps used by auth.ts actions (not callable from clients).
 import { internalMutation, internalQuery } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
+import { LIMITS, isLimited, recordEvent } from "./rateLimit";
+
+export const SIGNUP_LIMITED = "Too many new accounts right now. Try again in an hour.";
 
 // FR-04: 5 failed sign-ins per 15 minutes per email.
 export const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
@@ -15,9 +18,18 @@ export const byEmail = internalQuery({
       .unique(),
 });
 
+// Checked before the (slow) password hash, and again in `create`.
+export const signupLimited = internalQuery({
+  args: {},
+  handler: async (ctx) => await isLimited(ctx, "signup", LIMITS.signup),
+});
+
 export const create = internalMutation({
   args: { email: v.string(), passwordHash: v.string() },
   handler: async (ctx, args) => {
+    if (await isLimited(ctx, "signup", LIMITS.signup)) {
+      throw new ConvexError(SIGNUP_LIMITED);
+    }
     const existing = await ctx.db
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", args.email))
@@ -25,6 +37,7 @@ export const create = internalMutation({
     if (existing) {
       throw new ConvexError("An account with this email already exists. Sign in instead.");
     }
+    await recordEvent(ctx, "signup");
     return await ctx.db.insert("users", {
       email: args.email,
       passwordHash: args.passwordHash,
