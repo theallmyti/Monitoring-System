@@ -40,6 +40,7 @@ export const overview = query({
         lastSeenAt: d.lastSeenAt,
         online: now - d.lastSeenAt < OFFLINE_AFTER_MS,
         agentVersion: d.agentVersion ?? null,
+        capabilities: d.capabilities ?? null,
         updateAvailable: isOutdated(d.agentVersion),
         latest: latest ?? null,
       });

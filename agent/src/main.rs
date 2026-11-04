@@ -13,6 +13,7 @@ mod config;
 mod cputemp;
 mod dashboard;
 mod gpu;
+mod hardware;
 mod pair;
 #[cfg(windows)]
 mod service;
@@ -61,6 +62,10 @@ fn cpu_temp(components: &Components) -> Option<f64> {
 
 /// S2 spike: print every temperature sensor the OS exposes (Linux hwmon), then exit.
 fn print_sensors() {
+    match hardware::ram_speed_mts() {
+        Some(mts) => say!("{:<40} {mts} MT/s", "memory speed"),
+        None => say!("{:<40} n/a", "memory speed"),
+    }
     let components = Components::new_with_refreshed_list().expect("failed to read sensors");
     for c in &components {
         match c.temperature() {
@@ -164,8 +169,16 @@ fn capabilities_value(
     full_mode: bool,
     components: &Components,
     drives: &[Drive],
+    cpu_model: Option<&str>,
 ) -> Value {
     let mut o = BTreeMap::new();
+    // Fixed facts for the device page (read once; FR-15).
+    if let Some(m) = cpu_model {
+        o.insert("cpuModel".to_string(), text(m));
+    }
+    if let Some(mts) = hardware::ram_speed_mts() {
+        o.insert("ramSpeedMTs".to_string(), num(f64::from(mts)));
+    }
     o.insert("hasBattery".to_string(), Value::Boolean(has_battery));
     o.insert("hasNvidiaGpu".to_string(), Value::Boolean(has_gpu));
     o.insert(
@@ -496,6 +509,10 @@ pub async fn run(path: PathBuf, stop: Arc<Notify>) {
             cpu_temp_reader.available(),
             &components,
             &drives,
+            sys.cpus()
+                .first()
+                .map(|c| c.brand().trim())
+                .filter(|b| !b.is_empty()),
         ),
     );
     hello_args.insert("agentVersion".to_string(), text(env!("CARGO_PKG_VERSION")));

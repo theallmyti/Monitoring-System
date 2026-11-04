@@ -48,3 +48,20 @@ test("the site sees which devices run an older agent", async () => {
   const after = await t.query(api.dashboard.overview, { token });
   expect(after.devices[0].updateAvailable).toBe(false);
 });
+
+test("hello stores the CPU model and memory speed, and the site gets them", async () => {
+  const t = convexTest(schema, modules);
+  const token = await owned(t);
+  const capabilities = {
+    hasBattery: true,
+    hasNvidiaGpu: true,
+    perCoreTemps: false,
+    isPi: false,
+    drives: [{ name: "C:", totalGB: 476 }],
+    cpuModel: "AMD Ryzen 7 4800H",
+    ramSpeedMTs: 3200,
+  };
+  await t.mutation(api.agent.hello, { secretHash: HASH, agentVersion: LATEST_AGENT_VERSION, capabilities });
+  const { devices } = await t.query(api.dashboard.overview, { token });
+  expect(devices[0].capabilities).toMatchObject({ cpuModel: "AMD Ryzen 7 4800H", ramSpeedMTs: 3200 });
+});

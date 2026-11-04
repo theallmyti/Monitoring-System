@@ -4,6 +4,7 @@ import { anyApi } from "convex/server";
 import { ConvexError } from "convex/values";
 import { Device, Overview, RANGES, Range } from "./types";
 import { DeviceSection, CPU_TEMP_LIMIT, GPU_TEMP_LIMIT, RAM_LIMIT } from "./DeviceSection";
+import { DeviceDetail } from "./DeviceDetail";
 import { Kpi } from "./Kpi";
 import { PairScreen } from "./PairScreen";
 
@@ -146,6 +147,27 @@ function Dashboard({ token, email, onSignOut }: { token: string; email: string; 
   const [pairing, setPairing] = useState<string | null>(
     () => new URLSearchParams(window.location.search).get("pair"),
   );
+  // The open device page, kept in the URL (?device=<id>) so the phone's back gesture works.
+  const [openId, setOpenId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("device"));
+  useEffect(() => {
+    const onPop = () => setOpenId(new URLSearchParams(window.location.search).get("device"));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  const openDevice = (id: string) => {
+    window.history.pushState({ device: id }, "", `?device=${encodeURIComponent(id)}`);
+    setOpenId(id);
+    window.scrollTo(0, 0);
+  };
+  const closeDevice = () => {
+    if (window.history.state?.device) {
+      window.history.back(); // opened from the list: same as the phone's back gesture
+    } else {
+      // opened straight from a link: there is no list page behind it
+      window.history.replaceState(null, "", window.location.pathname);
+      setOpenId(null);
+    }
+  };
   const data = useQuery(anyApi.dashboard.overview, { token }) as Overview | undefined;
   const setViewerAll = useMutation(anyApi.dashboard.setViewerAll);
   const hasDevices = (data?.devices.length ?? 0) > 0;
@@ -168,7 +190,14 @@ function Dashboard({ token, email, onSignOut }: { token: string; email: string; 
   }, [hasDevices, token, setViewerAll]);
 
   if (pairing !== null) {
-    return <PairScreen token={token} initialCode={pairing || undefined} onDone={() => setPairing(null)} />;
+    const donePairing = () => {
+      // Drop ?pair=CODE so a reload does not open the used code again.
+      if (new URLSearchParams(window.location.search).has("pair")) {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+      setPairing(null);
+    };
+    return <PairScreen token={token} initialCode={pairing || undefined} onDone={donePairing} />;
   }
 
   if (data === undefined) {
@@ -180,6 +209,10 @@ function Dashboard({ token, email, onSignOut }: { token: string; email: string; 
   }
 
   const devices = data.devices;
+  const open = openId ? devices.find((d) => d.id === openId) : undefined;
+  if (open) {
+    return <DeviceDetail device={open} token={token} range={range} onRange={setRange} onBack={closeDevice} />;
+  }
   const online = devices.filter((d) => d.online).length;
   // Fleet tiles use live devices only; an offline device's last readings are stale.
   const withLatest = devices.filter((d) => d.latest && d.online);
@@ -198,19 +231,6 @@ function Dashboard({ token, email, onSignOut }: { token: string; email: string; 
           <p className="italic">Every machine you own, at a glance.</p>
         </div>
         <div className="topbar-actions">
-          <div className="segmented" role="group" aria-label="Time range">
-            {RANGES.map((r) => (
-              <button
-                key={r.label}
-                type="button"
-                aria-pressed={r.hours === range.hours}
-                className={r.hours === range.hours ? "on" : ""}
-                onClick={() => setRange(r)}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
           <button type="button" className="action" onClick={() => setPairing("")}>Pair device</button>
           <span className="muted small">{email}</span>
           <button type="button" className="link" onClick={onSignOut}>Sign out</button>
@@ -260,7 +280,7 @@ function Dashboard({ token, email, onSignOut }: { token: string; email: string; 
           </section>
 
           {devices.map((d) => (
-            <DeviceSection key={d.id} device={d} token={token} range={range} />
+            <DeviceSection key={d.id} device={d} onOpen={() => openDevice(d.id)} />
           ))}
         </>
       )}

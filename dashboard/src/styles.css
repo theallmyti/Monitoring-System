@@ -292,3 +292,40 @@ input:focus { outline: none; border-bottom: 2px solid var(--fl-accent); }
   .kpi-value { font-size: 24px; }
   .device { margin-top: 24px; }
 }
+
+/* Device page (DeviceDetail.tsx) */
+.back { border: 0; background: transparent; color: var(--fl-accent); padding: 4px 0; margin-bottom: 4px; cursor: pointer; font-size: 14px; }
+.back:hover { text-decoration: underline; }
+.facts { margin-top: 20px; color: var(--fl-text-muted); }
+.detail-section { margin-top: 32px; }
+.detail-section > h2 { font-size: 18px; }
+.detail-section .kpis { margin-top: 12px; }
+.cores { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.core, .list-card, .drive {
+  background: var(--fl-card);
+  border: 1px solid var(--fl-stroke);
+  border-radius: var(--fl-radius-lg);
+  box-shadow: var(--fl-shadow-2);
+}
+.core { padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: baseline; }
+.core .meter { grid-column: 1 / -1; margin-top: 4px; }
+.core-name, .core-clock { font-size: 12px; color: var(--fl-text-muted); }
+.core-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.core-clock { grid-column: 1 / -1; font-variant-numeric: tabular-nums; }
+.list-card { margin-top: 12px; padding: 14px 16px; display: grid; gap: 10px; }
+.bars, .drives { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.drives { margin-top: 12px; }
+.bars li, .drive { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; }
+.drive { padding: 12px 16px; }
+.bars .meter, .drive .meter { grid-column: 1 / -1; margin-top: 4px; }
+.bar-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-value { font-size: 12px; color: var(--fl-text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+.drive.kpi-hot .meter-fill { background: var(--fl-critical); }
+.note { margin-top: 24px; }
+.danger { margin-top: 40px; }
+
+@media (max-width: 760px) {
+  .cores { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bars li, .drive { grid-template-columns: 1fr; }
+  .bar-value { text-align: left; }
+}

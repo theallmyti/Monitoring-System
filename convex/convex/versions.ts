@@ -12,7 +12,7 @@
 //      an older version show "update available" on the site, and the agent logs it.
 //   5. Deploy the backend before shipping an agent that calls a new function
 //      (0.2.0 needs agent:pushSummaries).
-export const LATEST_AGENT_VERSION = "0.2.0";
+export const LATEST_AGENT_VERSION = "0.2.1";
 export const MIN_AGENT_VERSION = "0.1.0";
 
 // Compares "x.y.z" versions numerically; missing or non-numeric parts count as 0.

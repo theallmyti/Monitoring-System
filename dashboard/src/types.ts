@@ -1,10 +1,36 @@
 // Shape returned by dashboard:overview (convex/convex/dashboard.ts).
 export interface Latest {
   ts: number;
-  cpu: { util: number; packageTemp?: number };
-  ram: { usedPct: number };
+  // perCoreUtil (%), clocks (MHz), ram.detail (GB) and topProcs are sent only while someone is
+  // watching; disks every 10 s while watching (convex/convex/schema.ts latest).
+  cpu: { util: number; packageTemp?: number; perCoreUtil?: number[]; clocks?: number[] };
+  ram: {
+    usedPct: number;
+    detail?: { used: number; free: number; total: number; swapUsed: number; swapTotal: number };
+    topProcs?: { name: string; mb: number }[];
+  };
+  disks?: Drive[];
+  uptimeSec?: number;
+  battery?: { pct: number; charging: boolean; healthPct?: number; cycles?: number; rateW?: number };
   gpu?: { temp: number; util: number; vramUsed: number; vramTotal: number; powerW: number; clock: number; fanPct?: number };
   pi?: { docker?: { running: number; stopped: number; errored: number } };
+}
+
+export interface Drive {
+  name: string;
+  totalGB: number;
+  freeGB: number;
+}
+
+// Reported once at agent start (convex/convex/validators.ts capabilities).
+export interface Capabilities {
+  hasBattery: boolean;
+  hasNvidiaGpu: boolean;
+  isPi: boolean;
+  windowsMode?: "full" | "noDriver";
+  drives: { name: string; totalGB: number }[];
+  cpuModel?: string;
+  ramSpeedMTs?: number;
 }
 
 export interface Device {
@@ -14,6 +40,7 @@ export interface Device {
   online: boolean;
   agentVersion: string | null;
   updateAvailable: boolean;
+  capabilities: Capabilities | null;
   latest: Latest | null;
 }
 

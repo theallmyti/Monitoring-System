@@ -36,4 +36,7 @@ export const capabilities = v.object({
   windowsMode: v.optional(v.union(v.literal("full"), v.literal("noDriver"))),
   isPi: v.boolean(),
   drives: v.array(v.object({ name: v.string(), totalGB: v.number() })),
+  // Fixed facts for the device page (agent 0.2.0+).
+  cpuModel: v.optional(v.string()),
+  ramSpeedMTs: v.optional(v.number()), // memory speed in MT/s, from SMBIOS (Windows)
 });
