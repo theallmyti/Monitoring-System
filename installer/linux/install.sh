@@ -26,6 +26,7 @@ case "$url" in https://*.convex.cloud) ;; *) echo "Set CONVEX_URL or put the Con
 systemctl stop pc-monitor-agent 2>/dev/null || true
 install -d -m 755 /opt/pc-monitor
 install -m 755 "$bin" /opt/pc-monitor/pc-monitor-agent
+[ -f "$here/uninstall.sh" ] && install -m 755 "$here/uninstall.sh" /opt/pc-monitor/uninstall.sh
 
 install -d -m 700 /etc/pc-monitor
 cfg=/etc/pc-monitor/config.toml
@@ -49,3 +50,4 @@ systemctl daemon-reload
 systemctl enable --now pc-monitor-agent
 echo
 echo "Installed. Status: systemctl status pc-monitor-agent    Log: journalctl -u pc-monitor-agent -f"
+echo "Uninstall: sudo sh /opt/pc-monitor/uninstall.sh"

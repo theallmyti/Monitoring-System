@@ -1,0 +1,41 @@
+# Builds the Linux agent for x86-64 and ARM64 (Raspberry Pi) on every push to main.
+# No secrets: the Convex URL is added later, when the .run installer is packaged locally
+# (installer/linux/make-run.sh). Download: gh run download -n pc-monitor-agent-linux-<arch>
+name: Linux build
+
+on:
+  push:
+    branches: [main]
+    paths: ["agent/**", ".github/workflows/linux-build.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Agent (${{ matrix.arch }})
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            os: ubuntu-latest
+          - arch: aarch64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+          key: ${{ matrix.arch }}
+      - run: cargo build --release --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pc-monitor-agent-linux-${{ matrix.arch }}
+          path: agent/target/release/pc-monitor-agent
+          retention-days: 30
