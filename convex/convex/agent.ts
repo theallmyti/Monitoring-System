@@ -147,7 +147,9 @@ export const pushLatest = mutation({
     // lastSeenAt is set by summaries only (Architecture.md §2.2), not per live push.
     const row = {
       deviceId: device._id,
-      ts: args.ts,
+      // Server time: the site shows "last update" from it, and a PC's clock may be wrong.
+      // args.ts (the PC's time) is kept in the arguments for older agents.
+      ts: Date.now(),
       cpu: { util: args.cpuUtil, packageTemp: args.cpuTemp, perCoreUtil: args.perCoreUtil, clocks: args.clocks },
       ram: { usedPct: args.ramUsedPct, detail: args.ram, topProcs: args.topProcs },
       disks: args.disks,

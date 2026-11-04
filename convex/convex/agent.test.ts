@@ -113,6 +113,11 @@ test("pushLatest updates the latest row and writes no history", async () => {
   const latest = await t.run((ctx) => ctx.db.query("latest").collect());
   expect(latest).toHaveLength(1);
   expect(latest[0].cpu.util).toBe(12);
+
+  // The time is the server's, even when the PC's clock is an hour off.
+  await t.mutation(api.agent.pushLatest, { secretHash: HASH, ts: Date.now() + 3_600_000, cpuUtil: 12, ramUsedPct: 31 });
+  const [row] = await t.run((ctx) => ctx.db.query("latest").collect());
+  expect(Math.abs(row.ts - Date.now())).toBeLessThan(1000);
   expect(await t.run((ctx) => ctx.db.query("summaries").collect())).toHaveLength(0);
 });
 

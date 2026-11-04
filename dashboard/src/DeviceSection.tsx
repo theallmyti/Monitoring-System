@@ -35,7 +35,9 @@ export function DeviceSection({ device, token, range }: { device: Device; token:
       return v === undefined ? [] : [{ t: s.minuteTs, v }];
     });
 
-  const ageSec = Math.max(0, Math.round((Date.now() - device.lastSeenAt) / 1000));
+  // Newest of the live reading (every second while this page is open) and the minute summary.
+  const lastUpdate = Math.max(device.lastSeenAt, device.latest?.ts ?? 0);
+  const ageSec = Math.max(0, Math.round((Date.now() - lastUpdate) / 1000));
   const age = ageSec < 120 ? `${ageSec} s ago` : `${Math.round(ageSec / 60)} min ago`;
   const vram = l?.gpu ? (l.gpu.vramUsed / l.gpu.vramTotal) * 100 : undefined;
   const removeDevice = useMutation(anyApi.dashboard.removeDevice);
